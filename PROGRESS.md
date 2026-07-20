@@ -35,3 +35,16 @@ Notes:
 Deviations:
 
 - None.
+
+## Phase 0 follow-up audit
+
+- Confirmed the persistent invariants rule contains the required architecture
+  constraints.
+- Confirmed both deployment header files keep `connect-src 'self'`.
+- Confirmed DuckDB WebAssembly and worker bundles are present in `public/` and
+  in the generated static export.
+- Confirmed `samples/` is ignored and strict TypeScript remains enabled.
+- Relabeled the three scaffold checks as smoke tests so they are not mistaken
+  for feature coverage.
+- Added standing commit and push safeguards to the persistent project rule.
+- Re-ran the full Phase 0 gate successfully.
