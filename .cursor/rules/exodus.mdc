@@ -1,0 +1,17 @@
+---
+description: Non-negotiable Exodus architecture and privacy invariants
+alwaysApply: true
+---
+
+## 2. Architecture invariants (never violate)
+
+Also write these into `.cursor/rules/exodus.mdc` in Phase 0 so they persist across sessions.
+
+- **Fully client-side.** Next.js 15 App Router with `output: 'export'`. NEVER add API routes, route handlers, server actions, middleware, or any `fetch`/XHR/WebSocket to an external origin. If a feature seems to need a server, stop and flag it.
+- **All ZIP reading, parsing, and the database live in one Web Worker** (`workers/ingest.worker.ts`), exposed to the UI via Comlink. The main thread never unzips, parses, or runs SQL directly — it calls the worker's exposed methods.
+- **Parsers are plugins.** Each lives in `parsers/<platform>/index.ts`, implements `DataParser` from `parsers/types.ts`, outputs rows validated by zod against `lib/schema.ts`, and never touches the DOM, React, or DuckDB directly.
+- **All SQL lives in `lib/db/`.** UI components call typed query functions; they never contain SQL strings.
+- **Memory rules:** never load an entire ZIP or an entire media file into memory as a strategy. Media entries are decompressed on demand with zip.js `getData()`, displayed via `URL.createObjectURL`, and released with `URL.revokeObjectURL` when the element unmounts. Text entries are parsed in batches; DB inserts are batched (Section 5.3).
+- **Offline-complete:** every asset (DuckDB wasm/worker bundles, fonts, icons) is self-hosted under `public/`. No CDN references anywhere. The deployed app must work with Wi-Fi off after first load.
+- **Arabic-first correctness:** all message/text rendering uses `dir="auto"`; mojibake repair (Section 6.2) is applied to all Instagram-sourced strings.
+- **UI stack is fixed:** Tailwind + shadcn/ui + recharts. No additional UI or state libraries.
