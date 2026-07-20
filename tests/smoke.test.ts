@@ -7,7 +7,7 @@ import nextConfig from "../next.config";
 const contentSecurityPolicy =
   "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' blob: data:; media-src blob:; worker-src 'self' blob:; font-src 'self'";
 
-describe("Phase 0 constraints", () => {
+describe("phase-0 smoke", () => {
   it("builds as a static export with unoptimized images", () => {
     expect(nextConfig.output).toBe("export");
     expect(nextConfig.images?.unoptimized).toBe(true);
