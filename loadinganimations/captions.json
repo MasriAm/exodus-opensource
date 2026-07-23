@@ -1,0 +1,45 @@
+{
+  "loading": {
+    "dusting": {
+      "path": "/assets/dusting.webp",
+      "captions": [
+        "Dusting your old DMs...",
+        "Sweeping up your memories...",
+        "Clearing your archive...",
+        "Brushing your data..."
+      ]
+    },
+    "scroll": {
+      "path": "/assets/scroll.webp",
+      "captions": [
+        "Finding out who your real friends are...",
+        "Checking the timestamps...",
+        "Auditing your follower history...",
+        "Calculating who actually stuck around..."
+      ]
+    },
+    "cauldron": {
+      "path": "/assets/cauldron.webp",
+      "captions": [
+        "Locating your most embarrassing moments...",
+        "Extracting highly toxic memories...",
+        "Handling your past aesthetics...",
+        "Brewing up your worst takes..."
+      ]
+    }
+  },
+  "interactive_states": {
+    "cringe_prompts": [
+      "According to our historical records, you thought it was a good idea to say:",
+      "We found this gem buried deep in the archives. Care to explain?",
+      "Our algorithm detected high levels of regret regarding this statement:",
+      "Evidence suggests you sent this with a straight face:"
+    ],
+    "artifact_prompts": [
+      "Careful, you might shed a tear!",
+      "A perfectly preserved relic from day one.",
+      "Warning: highly concentrated nostalgia ahead.",
+      "The digital fossil that started it all."
+    ]
+  }
+}
