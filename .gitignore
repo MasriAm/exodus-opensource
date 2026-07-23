@@ -42,3 +42,9 @@ next-env.d.ts
 
 # private data-export samples
 /samples/
+
+# accidental local export dumps
+/export-*.json
+/export-*.csv
+/tmp_export-*.json
+/tmp_export-*.csv

@@ -15,9 +15,3 @@ Also write these into `.cursor/rules/exodus.mdc` in Phase 0 so they persist acro
 - **Offline-complete:** every asset (DuckDB wasm/worker bundles, fonts, icons) is self-hosted under `public/`. No CDN references anywhere. The deployed app must work with Wi-Fi off after first load.
 - **Arabic-first correctness:** all message/text rendering uses `dir="auto"`; mojibake repair (Section 6.2) is applied to all Instagram-sourced strings.
 - **UI stack is fixed:** Tailwind + shadcn/ui + recharts. No additional UI or state libraries.
-
-## Standing commit rules
-
-- After every phase gate passes: commit AND push to origin main. Never force-push. Never commit samples/ or any real export data.
-- Every commit message: summary line "phase-N: <what>" plus a body listing what changed and why.
-- After every commit: print `git show --stat HEAD`, then explain the commit in 3-5 plain sentences a non-expert can follow — what each group of files is and why it exists.

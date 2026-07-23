@@ -3,21 +3,30 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "npm run assets:fixtures && next dev",
+    "preview": "node scripts/preview-static.mjs",
+    "build": "npm run assets:fixtures && next build && node scripts/finalize-service-worker.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:browser": "node scripts/browser-smoke.mjs",
     "lint": "eslint .",
+    "fixtures": "tsx scripts/generate-fixture.ts && npm run assets:fixtures",
     "assets:duckdb": "node scripts/copy-duckdb-assets.mjs",
-    "postinstall": "npm run assets:duckdb"
+    "assets:fixtures": "node scripts/copy-demo-fixtures.mjs",
+    "assets:loading": "node scripts/convert-loading-assets.mjs",
+    "postinstall": "npm run assets:duckdb && npm run assets:fixtures"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
     "@duckdb/duckdb-wasm": "^1.33.1-dev57.0",
+    "@fontsource/courier-prime": "^5.3.0",
+    "@fontsource/lora": "^5.3.0",
     "@zip.js/zip.js": "^2.8.31",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "comlink": "^4.4.2",
+    "framer-motion": "^12.42.2",
     "html-to-image": "^1.11.13",
     "lucide-react": "^1.25.0",
     "next": "15.5.20",
@@ -38,6 +47,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.5.20",
     "tailwindcss": "^4",
+    "tsx": "^4.23.1",
     "typescript": "^5",
     "vitest": "^4.1.10"
   }

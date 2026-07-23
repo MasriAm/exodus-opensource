@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" role="img" aria-label="Exodus">
+  <rect width="192" height="192" rx="44" fill="#173f35"/>
+  <path d="M52 48h88v18H73v21h57v18H73v21h67v18H52z" fill="#f4efe5"/>
+  <circle cx="141" cy="48" r="12" fill="#e8a83e"/>
+</svg>

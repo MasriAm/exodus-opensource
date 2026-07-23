@@ -1,5 +1,7 @@
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
+import Link from "next/link"
+import type { ComponentProps } from "react"
 
 import { cn } from "@/lib/utils"
 
@@ -55,4 +57,20 @@ function Button({
   )
 }
 
-export { Button, buttonVariants }
+/** Link styled like Button. Prefer this over Button+render=&lt;Link&gt; (Base UI a11y). */
+function ButtonLink({
+  className,
+  variant = "default",
+  size = "default",
+  ...props
+}: ComponentProps<typeof Link> & VariantProps<typeof buttonVariants>) {
+  return (
+    <Link
+      data-slot="button"
+      className={cn(buttonVariants({ variant, size, className }))}
+      {...props}
+    />
+  )
+}
+
+export { Button, ButtonLink, buttonVariants }

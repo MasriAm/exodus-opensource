@@ -19,7 +19,7 @@ These rules exist to prevent hallucinated APIs, fake progress, and demo-day fail
 7. **When the spec is ambiguous or two rules conflict, stop and ask** one specific question. Do not guess silently on anything that affects the data model, the parser contract, or privacy.
 8. **Strict TypeScript.** `"strict": true`, no `any` in committed code (use `unknown` + narrowing), exhaustive `switch` on discriminated unions, all zod parses handled (`safeParse` with explicit error paths).
 9. **Every user-visible surface has loading, empty, and error states.** No unhandled promise rejections. Errors surface to the user in plain language, never as raw stack traces, and are also `console.error`'d for debugging.
-10. **After each phase:** run the gate, update `PROGRESS.md` (what was built, what's pending, any deviations from spec), and commit as `phase-N: <summary>`.
+10. **After each phase:** run the gate and update `PROGRESS.md` (what was built, what's pending, any deviations from spec). Do not commit or push unless the user explicitly asks.
 11. **Scope discipline.** Build exactly what the current phase lists. Do not add libraries, abstractions, or features not in this spec. If you believe something extra is needed, propose it in one sentence and wait.
 
 ## 2. Architecture invariants (never violate)
@@ -126,7 +126,10 @@ Convert `*_ms` to TIMESTAMP at insert time (e.g. `to_timestamp(ms / 1000.0)` —
 
 ### 5.3 Ingest pattern
 
-In the worker, buffer emitted rows per table; every ≤2000 rows serialize the batch to a JSON string, register it as a virtual file (duckdb-wasm exposes a register-text/buffer API — confirm the exact name in the installed types), `INSERT INTO <table> SELECT … FROM read_json(...)` with explicit columns, then drop the registration. Never row-by-row `INSERT` statements in a loop.
+In the worker, buffer emitted rows per table and insert every ≤2000 rows with
+**prepared `INSERT` statements** (batched parameters). Do **not** use DuckDB
+`read_json` / remote extensions under the app CSP — those attempt network
+downloads. Never row-by-row `INSERT` statements in a loop.
 
 ### 5.4 Worker surface (Comlink-exposed)
 
@@ -175,7 +178,7 @@ Callbacks passed through Comlink must be wrapped with `Comlink.proxy` — verify
 
 ## 7. Phases — tasks, acceptance criteria, gates
 
-Gate for every phase: `npm run typecheck && npm run test && npm run build` all green (real output pasted), `PROGRESS.md` updated, committed as `phase-N`.
+Gate for every phase: `npm run typecheck && npm run test && npm run build` all green (real output pasted) and `PROGRESS.md` updated. Commit or push only when the user explicitly asks.
 
 **Phase 0 — Scaffold & constraints.** Create the Next.js app (TypeScript, Tailwind, App Router), `output: 'export'` + `images.unoptimized`, strict tsconfig, vitest config, scripts: `dev`, `build`, `typecheck` (`tsc --noEmit`), `test`. Add `.cursor/rules/exodus.mdc` with Section 2 verbatim. Copy DuckDB wasm + worker bundles from `node_modules/@duckdb/duckdb-wasm/dist/` into `public/duckdb/` (add an npm `postinstall` or a documented script). Create `PROGRESS.md`, `README.md` stub, MIT `LICENSE`, `.gitignore` including `samples/`. Add deploy headers for both targets — `vercel.json` and `public/_headers` — with:
 `Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' blob: data:; media-src blob:; worker-src 'self' blob:; font-src 'self'`
