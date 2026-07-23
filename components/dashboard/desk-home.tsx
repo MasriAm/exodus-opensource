@@ -18,6 +18,8 @@ type DeskHomeProps = {
   onOpenMedia: () => void;
   onSurprise: () => void;
   surprise: MessageItem | null;
+  surpriseLoading?: boolean;
+  surpriseEmpty?: boolean;
 };
 
 function SectionHeader({
@@ -65,6 +67,8 @@ export function DeskHome({
   onOpenMedia,
   onSurprise,
   surprise,
+  surpriseLoading = false,
+  surpriseEmpty = false,
 }: DeskHomeProps) {
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -181,6 +185,10 @@ export function DeskHome({
           >
             Contact sheet
           </SectionHeader>
+          <p className="mt-1 font-body text-[15px] text-body">
+            A quick strip of photographs from the archive — open Media for the
+            full set.
+          </p>
           <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-6">
             {data.sampleMedia.map((item) => (
               <PhotoThumb
@@ -201,6 +209,9 @@ export function DeskHome({
           >
             Frequent correspondents
           </SectionHeader>
+          <p className="mt-1 font-body text-[15px] text-body">
+            The people you wrote to most — click a name to open their file.
+          </p>
           <div className="mt-4">
             {data.topPeople.map((person) => (
               <button
@@ -221,23 +232,64 @@ export function DeskHome({
         </section>
       ) : null}
 
-      {/* The screen's single raised element */}
-      <section>
-        <PressButton type="button" onClick={onSurprise}>
-          Surprise me
+      {/* Orientation + the screen's single raised element */}
+      <section className="space-y-4" id="surprise-memory">
+        <p className="font-body text-[15px] font-medium text-ink/85">
+          Pull one random message or photo onto the desk — press again for
+          another.
+        </p>
+        <PressButton
+          type="button"
+          onClick={onSurprise}
+          disabled={surpriseLoading}
+        >
+          {surpriseLoading
+            ? "Finding a memory…"
+            : "Show me a random memory"}
         </PressButton>
+        {surpriseEmpty && !surprise && !surpriseLoading ? (
+          <p className="font-body text-[15px] font-medium text-ink/75" role="status">
+            No memory matched the current filters — try again or clear filters.
+          </p>
+        ) : null}
         {surprise ? (
-          <figure className="mt-6 border-y border-ink/20 py-4">
-            <figcaption className="meta-caps text-[11px] text-body">
-              A random memory · <span dir="auto">{surprise.conversation}</span>{" "}
-              · {formatDate(surprise.sentAtMs)}
+          <figure className="border border-ink/25 bg-cream/60 px-4 py-4">
+            <figcaption className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/75">
+              Random memory ·{" "}
+              <button
+                type="button"
+                dir="auto"
+                className="text-teal hover:underline"
+                onClick={() => onOpenPerson(surprise.conversation)}
+              >
+                {surprise.conversation}
+              </button>{" "}
+              · {formatDate(surprise.sentAtMs)} · {surprise.sender}
             </figcaption>
-            <blockquote
-              dir="auto"
-              className="mt-2 font-body text-[15px] leading-7 text-ink"
+            {surprise.text ? (
+              <blockquote
+                dir="auto"
+                className="mt-3 font-body text-[16px] font-medium leading-7 text-ink"
+              >
+                “{surprise.text}”
+              </blockquote>
+            ) : null}
+            {surprise.mediaRef ? (
+              <div className="mt-3 max-w-[12rem]">
+                <PhotoThumb
+                  zipPath={surprise.mediaRef}
+                  readBlob={readBlob}
+                />
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="mt-3 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-teal hover:underline"
+              onClick={onSurprise}
+              disabled={surpriseLoading}
             >
-              “{surprise.text}”
-            </blockquote>
+              Another memory
+            </button>
           </figure>
         ) : null}
       </section>

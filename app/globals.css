@@ -4,6 +4,7 @@
 @import "@fontsource/courier-prime/400.css";
 @import "@fontsource/courier-prime/700.css";
 @import "@fontsource/lora/400.css";
+@import "@fontsource/lora/500.css";
 @import "@fontsource/lora/600.css";
 @import "@fontsource/lora/700.css";
 
@@ -50,6 +51,11 @@
   --color-cream: var(--cream);
   --color-receipt: var(--receipt);
   --color-teal-wash: var(--teal-wash);
+  --color-heat-0: var(--heat-0);
+  --color-heat-1: var(--heat-1);
+  --color-heat-2: var(--heat-2);
+  --color-heat-3: var(--heat-3);
+  --color-heat-4: var(--heat-4);
   --color-ink: var(--ink);
   --color-body: var(--body);
   --color-teal: var(--teal);
@@ -69,7 +75,7 @@
   --cream: #f4edd9;
   --receipt: #fbf7ed;
   --ink: #2b1b23;
-  --body: #5c4a63;
+  --body: #342636;
   --teal: #17808f;
   --slate: #4e6172;
   --coral: #ef5b33;
@@ -131,6 +137,11 @@
     @apply bg-paper text-ink;
     min-height: 100vh;
     font-family: var(--font-body);
+    font-weight: 500;
+    font-size: 16.5px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
   html {
     scroll-behavior: smooth;
@@ -241,11 +252,12 @@
   }
 
   .meta-caps {
-    font-family: var(--font-body);
-    font-size: 12px;
+    font-family: var(--font-display);
+    font-size: 11px;
+    font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--body);
+    color: color-mix(in srgb, var(--ink) 82%, transparent);
   }
 }
 

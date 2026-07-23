@@ -35,13 +35,13 @@ export function HomeShell({
     reduceMotion
       ? undefined
       : {
-          initial: { opacity: 0, y: 10 },
+          initial: { opacity: 0, y: 6 },
           animate: { opacity: 1, y: 0 },
-          transition: { duration: 0.3, delay },
+          transition: { duration: 0.22, delay },
         };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-paper">
+    <main className="relative flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-paper">
       {showScene ? (
         <IngestLoadingScene
           progress={progress}
@@ -49,32 +49,31 @@ export function HomeShell({
         />
       ) : null}
 
-      <header className="relative z-10 mx-auto flex max-w-3xl items-center justify-end px-5 py-5 sm:px-8">
+      <header className="relative z-10 mx-auto flex w-full max-w-3xl shrink-0 items-center justify-end px-4 py-2 sm:px-8 sm:py-3">
         <NetworkBadge />
       </header>
 
-      <div className="relative z-10 mx-auto flex max-w-3xl flex-col items-center px-5 pb-20 pt-6 text-center sm:px-8 sm:pt-10">
+      <div className="relative z-10 mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 pb-4 pt-1 text-center sm:px-8 sm:pb-6">
         <motion.div {...item(0)}>
           <CapsuleBadge>100% local, open source and private</CapsuleBadge>
         </motion.div>
 
         <motion.h1
-          className="mt-8 max-w-2xl font-display text-4xl font-bold tracking-[0.04em] text-ink sm:text-6xl"
-          {...item(0.08)}
+          className="mt-3 max-w-2xl font-display text-[1.65rem] font-bold leading-tight tracking-[0.04em] text-ink sm:mt-4 sm:text-4xl md:text-5xl"
+          {...item(0.05)}
         >
           MEET YOUR PAST SELF.
         </motion.h1>
 
         <motion.p
-          className="mt-6 max-w-xl font-body text-base leading-8 text-body sm:text-lg"
-          {...item(0.16)}
+          className="mt-2 max-w-lg font-body text-[14px] font-medium leading-6 text-ink/85 sm:mt-3 sm:text-[15px] sm:leading-6"
+          {...item(0.1)}
         >
-          Drop your Instagram <Mark>.zip</Mark> export below. We&apos;ll parse
-          the data directly in your browser to build your personal time capsule.
-          Nothing ever leaves your computer.
+          Drop your Instagram <Mark>.zip</Mark> export. We parse it in your
+          browser — nothing leaves this device.
         </motion.p>
 
-        <motion.div className="mt-10 w-full" {...item(0.24)}>
+        <motion.div className="mt-4 w-full sm:mt-5" {...item(0.15)}>
           <ArchiveDropzone
             busy={busy || !workerReady}
             error={error}

@@ -103,7 +103,7 @@ function SceneArt({
     <AnimatePresence mode="wait">
       <motion.div
         key={sceneId}
-        className="relative mx-auto aspect-square w-full max-w-[280px] sm:max-w-[360px]"
+        className="relative mx-auto aspect-square w-full max-w-[200px] sm:max-w-[360px]"
         initial={reduceMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={reduceMotion ? undefined : { opacity: 0 }}
@@ -185,15 +185,15 @@ export function IngestLoadingScene({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-40 flex min-h-screen flex-col items-center justify-center bg-paper px-5 py-10",
+        "fixed inset-0 z-40 flex min-h-[100dvh] flex-col items-center justify-center overflow-y-auto bg-paper px-4 py-6 sm:px-5 sm:py-10",
         className,
       )}
       role="status"
       aria-live="polite"
       aria-busy="true"
     >
-      <div className="flex w-full max-w-xl flex-col items-center gap-8">
-        <p className="font-display text-[11px] uppercase tracking-[0.12em] text-body">
+      <div className="flex w-full max-w-xl flex-col items-center gap-5 sm:gap-8">
+        <p className="font-display text-[11px] uppercase tracking-[0.12em] text-ink/75">
           Developing your archive
         </p>
 
@@ -203,12 +203,12 @@ export function IngestLoadingScene({
           reduceMotion={reduceMotion}
         />
 
-        <div className="min-h-[3.5rem] w-full text-center">
+        <div className="min-h-[3rem] w-full text-center sm:min-h-[3.5rem]">
           <AnimatePresence mode="wait">
             <motion.p
               key={`${scene.id}-${caption}`}
               dir="auto"
-              className="font-body text-lg leading-8 text-ink sm:text-xl"
+              className="font-body text-base font-medium leading-7 text-ink sm:text-xl sm:leading-8"
               initial={reduceMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}

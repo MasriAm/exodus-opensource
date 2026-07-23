@@ -12,6 +12,7 @@ import {
 } from "@/components/archive-session";
 import { IngestLoadingScene } from "@/components/ingest-loading-scene";
 import { StatePanel } from "@/components/state-panel";
+import { COUNTS_TIMEOUT_MS, withTimeout } from "@/lib/query-timeout";
 
 const SESSION_ENDED_COPY =
   "Your session ended and nothing was saved — that's the point. Drop your export to start again.";
@@ -25,7 +26,12 @@ type SessionGateProps = {
   loadingDescription: string;
 };
 
-type GatePhase = "pending" | "allow" | "ingesting" | "redirecting";
+type GatePhase =
+  | "pending"
+  | "allow"
+  | "ingesting"
+  | "redirecting"
+  | "stalled";
 
 function hadLiveSessionMarker(): boolean {
   try {
@@ -48,9 +54,10 @@ export function SessionGate({
   loadingDescription,
 }: SessionGateProps) {
   const router = useRouter();
-  const { api, status, ingestProgress } = useArchiveSession();
+  const { api, status, ingestProgress, reloadSession } = useArchiveSession();
   const [phase, setPhase] = useState<GatePhase>("pending");
   const [redirectMessage, setRedirectMessage] = useState<string | null>(null);
+  const [probeToken, setProbeToken] = useState(0);
 
   useEffect(() => {
     if (!api || status === "booting") {
@@ -72,8 +79,7 @@ export function SessionGate({
     let active = true;
     setPhase("pending");
 
-    void api
-      .counts()
+    void withTimeout(api.counts(), COUNTS_TIMEOUT_MS, "sessionGate.counts")
       .then((counts) => {
         if (!active) {
           return;
@@ -104,8 +110,12 @@ export function SessionGate({
         if (!active) {
           return;
         }
-        const hadSession = hadLiveSessionMarker();
-        const message = hadSession ? SESSION_ENDED_COPY : NEVER_STARTED_COPY;
+        // Hung / timed-out worker — do not leave the gate spinning forever.
+        if (hadLiveSessionMarker()) {
+          setPhase("stalled");
+          return;
+        }
+        const message = NEVER_STARTED_COPY;
         setSessionFlash(message);
         setRedirectMessage(message);
         setPhase("redirecting");
@@ -115,7 +125,7 @@ export function SessionGate({
     return () => {
       active = false;
     };
-  }, [api, router, status]);
+  }, [api, probeToken, router, status]);
 
   if (phase === "allow") {
     return <>{children}</>;
@@ -161,6 +171,43 @@ export function SessionGate({
             >
               Meet your past self →
             </Link>
+          }
+        />
+      </main>
+    );
+  }
+
+  if (phase === "stalled") {
+    return (
+      <main className="min-h-screen bg-paper p-5 sm:p-8">
+        <StatePanel
+          kind="error"
+          title="The private worker went quiet"
+          description="The session probe timed out after the tab was away. Reload the desk to restart the worker — you will need to drop your export again."
+          action={
+            <div className="flex flex-wrap gap-4">
+              <button
+                type="button"
+                className="font-display text-sm font-bold text-teal underline underline-offset-4"
+                onClick={() => setProbeToken((value) => value + 1)}
+              >
+                Try again
+              </button>
+              <button
+                type="button"
+                className="font-display text-sm font-bold text-ink underline underline-offset-4"
+                onClick={() => {
+                  void reloadSession().then(() => {
+                    setSessionFlash(
+                      "The private worker restarted. Drop your export again — nothing was uploaded.",
+                    );
+                    router.replace("/");
+                  });
+                }}
+              >
+                Reload the desk
+              </button>
+            </div>
           }
         />
       </main>

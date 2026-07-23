@@ -322,6 +322,37 @@ export interface FootprintComment {
   year: number;
 }
 
+export interface FootprintFollowEvent {
+  kind: "follower" | "following";
+  username: string;
+  occurredAtMs: number;
+}
+
+export interface FootprintPersonalInfoField {
+  key: string;
+  value: string;
+}
+
+export interface FootprintPersonalInfo {
+  occurredAtMs: number;
+  path: string;
+  fields: FootprintPersonalInfoField[];
+}
+
+export interface FootprintCall {
+  media: "voice" | "video" | string;
+  durationSec: number | null;
+  conversation: string;
+  text: string | null;
+  occurredAtMs: number;
+}
+
+export interface FootprintSystemNote {
+  conversation: string;
+  text: string;
+  occurredAtMs: number;
+}
+
 export interface FootprintResult {
   comments: FootprintComment[];
   interestsByYear: Array<{ year: number; topics: string[] }>;
@@ -330,6 +361,10 @@ export interface FootprintResult {
     value: string;
     occurredAtMs: number;
   }>;
+  followEvents: FootprintFollowEvent[];
+  personalInfo: FootprintPersonalInfo[];
+  calls: FootprintCall[];
+  systemNotes: FootprintSystemNote[];
 }
 
 export interface SurpriseMemoryResult {

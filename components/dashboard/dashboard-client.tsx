@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search } from "lucide-react";
 
 import { ActivityHeatmapView } from "./activity-heatmap-view";
 import {
@@ -22,7 +21,6 @@ import {
 import { PeopleView } from "./people-view";
 import { SearchView, type SearchHit as SearchViewHit } from "./search-view";
 import { DashboardSidebar } from "./sidebar";
-import { YearFilmstrip } from "./year-filmstrip";
 
 import type { ArchiveFilter } from "@/lib/db/archive-filter";
 import { yearBoundsMs } from "@/lib/db/archive-filter";
@@ -40,16 +38,57 @@ import type {
   SearchHit,
 } from "@/lib/db/types";
 import { friendlyError } from "@/lib/errors";
+import { useArchiveSession, setSessionFlash } from "@/components/archive-session";
+import { StatePanel } from "@/components/state-panel";
+import { useRouter } from "next/navigation";
 
-const VIEW_LABELS: Record<DeskSection, { eyebrow: string; title: string }> = {
-  desk: { eyebrow: "Reading desk", title: "Your archive at a glance" },
-  people: { eyebrow: "Card catalog", title: "People" },
-  messages: { eyebrow: "Index cards", title: "Messages" },
-  media: { eyebrow: "Contact sheet", title: "Media" },
-  activity: { eyebrow: "Microfilm calendar", title: "Activity" },
-  search: { eyebrow: "Across every thread", title: "Search" },
-  footprint: { eyebrow: "Outside the DMs", title: "Footprint" },
-  export: { eyebrow: "Portable by design", title: "Export" },
+const VIEW_LABELS: Record<
+  DeskSection,
+  { eyebrow: string; title: string; subtitle: string }
+> = {
+  desk: {
+    eyebrow: "Reading desk",
+    title: "Your archive at a glance",
+    subtitle:
+      "The overview of what you imported — counts, a search, and a few places to start.",
+  },
+  people: {
+    eyebrow: "Card catalog",
+    title: "People",
+    subtitle:
+      "Every correspondent in the archive, with streaks, silence, and shared media.",
+  },
+  messages: {
+    eyebrow: "Correspondence",
+    title: "Messages",
+    subtitle: "Threads and their messages, still sitting only in this browser.",
+  },
+  media: {
+    eyebrow: "Contact sheet",
+    title: "Media",
+    subtitle: "Photographs and attachments pulled from the export on demand.",
+  },
+  activity: {
+    eyebrow: "Year ledger",
+    title: "Calendar",
+    subtitle:
+      "Message density across a year — sepia for volume, teal only for the day you select.",
+  },
+  search: {
+    eyebrow: "Across every thread",
+    title: "Search",
+    subtitle: "Find a line, a name, or a token without sending a query anywhere.",
+  },
+  footprint: {
+    eyebrow: "Outside the DMs",
+    title: "Footprint",
+    subtitle: "Public comments, interests, and identity changes from the export.",
+  },
+  export: {
+    eyebrow: "Portable by design",
+    title: "Export",
+    subtitle: "Download CSV or JSON tables from the local database.",
+  },
 };
 
 function mapMessage(message: MessageItem): MessageViewItem {
@@ -100,7 +139,10 @@ type DashboardClientProps = {
 };
 
 export function DashboardClient({ api }: DashboardClientProps) {
+  const router = useRouter();
+  const { reloadSession } = useArchiveSession();
   const [activeView, setActiveView] = useState<DeskSection>("desk");
+  const [deskRetryToken, setDeskRetryToken] = useState(0);
   const [filter, setFilter] = useState<ArchiveFilter>({});
   const [year, setYear] = useState<number | null>(null);
   const [options, setOptions] = useState<FilterOptionsResult | null>(null);
@@ -108,6 +150,8 @@ export function DashboardClient({ api }: DashboardClientProps) {
   const [deskLoading, setDeskLoading] = useState(true);
   const [deskError, setDeskError] = useState<string | null>(null);
   const [surprise, setSurprise] = useState<MessageItem | null>(null);
+  const [surpriseLoading, setSurpriseLoading] = useState(false);
+  const [surpriseEmpty, setSurpriseEmpty] = useState(false);
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [searchSeed, setSearchSeed] = useState("");
 
@@ -171,7 +215,11 @@ export function DashboardClient({ api }: DashboardClientProps) {
     footprint &&
       (footprint.comments.length > 0 ||
         footprint.interestsByYear.length > 0 ||
-        footprint.profileHistory.length > 0),
+        footprint.profileHistory.length > 0 ||
+        footprint.followEvents.length > 0 ||
+        footprint.personalInfo.length > 0 ||
+        footprint.calls.length > 0 ||
+        footprint.systemNotes.length > 0),
   );
 
   useEffect(() => {
@@ -203,7 +251,10 @@ export function DashboardClient({ api }: DashboardClientProps) {
       .catch((loadError: unknown) => {
         if (active) {
           setDeskError(
-            friendlyError(loadError, "The reading desk could not be opened."),
+            friendlyError(
+              loadError,
+              "The reading desk went quiet — the private worker timed out or stalled.",
+            ),
           );
         }
       })
@@ -215,7 +266,26 @@ export function DashboardClient({ api }: DashboardClientProps) {
     return () => {
       active = false;
     };
-  }, [api, effectiveFilter]);
+  }, [api, deskRetryToken, effectiveFilter]);
+
+  const reloadDesk = useCallback(async () => {
+    setDeskLoading(true);
+    setDeskError(null);
+    try {
+      // Soft retry first — the worker queue may already have recovered.
+      const result = await api.query("deskHome", { filter: effectiveFilter });
+      setDesk(result);
+      setDeskLoading(false);
+      return;
+    } catch {
+      // Hard reset: dispose the wedged worker. In-memory archive is gone.
+    }
+    await reloadSession();
+    setSessionFlash(
+      "The private worker had to restart, so the archive left memory. Drop your export again — nothing was uploaded.",
+    );
+    router.replace("/");
+  }, [api, effectiveFilter, reloadSession, router]);
 
   useEffect(() => {
     let active = true;
@@ -572,10 +642,24 @@ export function DashboardClient({ api }: DashboardClientProps) {
   }, []);
 
   const onSurprise = useCallback(() => {
+    setSurpriseLoading(true);
+    setSurpriseEmpty(false);
     void api
       .query("surpriseMemory", { filter: effectiveFilter })
-      .then((result) => setSurprise(result.message))
-      .catch(() => setSurprise(null));
+      .then((result) => {
+        setSurprise(result.message);
+        setSurpriseEmpty(result.message === null);
+        queueMicrotask(() => {
+          document
+            .getElementById("surprise-memory")
+            ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        });
+      })
+      .catch(() => {
+        setSurprise(null);
+        setSurpriseEmpty(true);
+      })
+      .finally(() => setSurpriseLoading(false));
   }, [api, effectiveFilter]);
 
   const onSelectDay = useCallback(
@@ -594,19 +678,114 @@ export function DashboardClient({ api }: DashboardClientProps) {
   const activeLabel = VIEW_LABELS[activeView];
   const messageCount = desk?.messages;
 
+  const filterMatch = useMemo(() => {
+    switch (activeView) {
+      case "people":
+        return { count: people.length, label: "people match" };
+      case "messages":
+        return {
+          count: conversations.reduce((sum, row) => sum + row.messageCount, 0),
+          label: "messages match",
+        };
+      case "media":
+        return { count: media.length, label: "media items match" };
+      case "activity":
+        return {
+          count:
+            heatmap?.days.reduce((sum, day) => sum + day.messageCount, 0) ?? 0,
+          label: "messages in this year",
+        };
+      case "search":
+        return {
+          count: searchResults.length,
+          label: hasSearched ? "matches" : "messages in scope",
+        };
+      case "footprint":
+        return {
+          count: footprint?.comments.length ?? 0,
+          label: "public comments",
+        };
+      default:
+        return {
+          count: messageCount ?? 0,
+          label: "messages match",
+        };
+    }
+  }, [
+    activeView,
+    conversations,
+    footprint,
+    hasSearched,
+    heatmap,
+    media.length,
+    messageCount,
+    people.length,
+    searchResults.length,
+  ]);
+
   const activeContent = (() => {
     switch (activeView) {
       case "desk":
         if (deskError) {
           return (
-            <p className="font-body text-coral" role="alert">
-              {deskError}
-            </p>
+            <StatePanel
+              kind="error"
+              title="The reading desk went quiet"
+              description={deskError}
+              action={
+                <div className="flex flex-wrap gap-4">
+                  <button
+                    type="button"
+                    className="font-display text-sm font-bold text-teal underline underline-offset-4"
+                    onClick={() => {
+                      setDeskRetryToken((value) => value + 1);
+                    }}
+                  >
+                    Try again
+                  </button>
+                  <button
+                    type="button"
+                    className="font-display text-sm font-bold text-ink underline underline-offset-4"
+                    onClick={() => {
+                      void reloadDesk();
+                    }}
+                  >
+                    Reload the desk
+                  </button>
+                </div>
+              }
+            />
           );
         }
         if (deskLoading || !desk) {
           return (
-            <p className="font-body text-body">Laying out the reading desk…</p>
+            <StatePanel
+              kind="loading"
+              title="Laying out the reading desk"
+              description="If this hangs more than a few seconds after the tab was away, reload the desk."
+              action={
+                <div className="flex flex-wrap justify-center gap-4">
+                  <button
+                    type="button"
+                    className="font-display text-sm font-bold text-teal underline underline-offset-4"
+                    onClick={() => {
+                      setDeskRetryToken((value) => value + 1);
+                    }}
+                  >
+                    Try again
+                  </button>
+                  <button
+                    type="button"
+                    className="font-display text-sm font-bold text-ink underline underline-offset-4"
+                    onClick={() => {
+                      void reloadDesk();
+                    }}
+                  >
+                    Reload the desk
+                  </button>
+                </div>
+              }
+            />
           );
         }
         return (
@@ -625,6 +804,8 @@ export function DashboardClient({ api }: DashboardClientProps) {
             onOpenMedia={() => setActiveView("media")}
             onSurprise={onSurprise}
             surprise={surprise}
+            surpriseLoading={surpriseLoading}
+            surpriseEmpty={surpriseEmpty}
           />
         );
       case "people":
@@ -684,6 +865,9 @@ export function DashboardClient({ api }: DashboardClientProps) {
             selectedDayMs={selectedDayMs}
             dayMessages={dayMessages}
             dayLoading={dayLoading}
+            years={years}
+            year={year}
+            onChangeYear={setYear}
             onSelectDay={onSelectDay}
             onOpenConversation={openMessages}
           />
@@ -702,7 +886,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
   })();
 
   return (
-    <main className="min-h-screen bg-paper lg:flex">
+    <main className="min-h-screen overflow-x-hidden bg-paper lg:flex">
       <DashboardSidebar
         active={activeView}
         onSelect={setActiveView}
@@ -713,44 +897,24 @@ export function DashboardClient({ api }: DashboardClientProps) {
         <DashboardHeader
           eyebrow={activeLabel.eyebrow}
           title={activeLabel.title}
+          subtitle={activeLabel.subtitle}
           messageCount={messageCount}
         />
-        <div className="mx-auto w-full max-w-[1140px] space-y-4 p-4 sm:p-6 lg:p-8">
-          {activeView !== "desk" ? (
-            <>
-              <label className="flex min-w-0 items-center gap-2 border-b border-ink/20 px-1 py-2">
-                <Search
-                  aria-hidden="true"
-                  className="size-4 shrink-0 text-body"
-                />
-                <input
-                  className="min-w-0 flex-1 bg-transparent font-display text-sm outline-none placeholder:text-body"
-                  placeholder="Search the archive — Ctrl+K"
-                  dir="auto"
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      const value = (
-                        event.target as HTMLInputElement
-                      ).value.trim();
-                      if (value) {
-                        setSearchSeed(value);
-                        setActiveView("search");
-                        search(value);
-                      }
-                    }
-                  }}
-                />
-              </label>
-
-              <YearFilmstrip years={years} value={year} onChange={setYear} />
-              <FilterBar
-                options={options}
-                filter={filter}
-                onChange={(next) => {
-                  setFilter(next);
-                }}
-              />
-            </>
+        <div className="mx-auto w-full max-w-[1140px] space-y-6 p-4 sm:p-6 lg:px-8 lg:py-6">
+          {activeView === "messages" ||
+          activeView === "people" ||
+          activeView === "media" ||
+          activeView === "activity" ? (
+            <FilterBar
+              options={options}
+              filter={filter}
+              year={year}
+              years={years}
+              onChange={setFilter}
+              onChangeYear={setYear}
+              matchCount={filterMatch.count}
+              matchLabel={filterMatch.label}
+            />
           ) : null}
           {activeContent}
         </div>

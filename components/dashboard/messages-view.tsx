@@ -1,7 +1,5 @@
-import { ChevronUp, MessageCircle, Paperclip } from "lucide-react";
+import { MessageCircle, Paperclip } from "lucide-react";
 
-import { CapsuleBadge } from "@/components/capsule/badge";
-import { PressButton } from "@/components/capsule/press-button";
 import { StatePanel } from "@/components/state-panel";
 import { formatDateTime, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -55,140 +53,147 @@ export function MessagesView({
   if (!loading && conversations.length === 0) {
     return (
       <StatePanel
-        title="No messages in this archive"
-        description="No conversations are loaded in this session. Import an archive from the home page first."
+        title="No messages match"
+        description="No conversations fit these filters. Reset them or import an archive from the home page."
       />
     );
   }
 
   return (
-    <div className="grid min-h-[calc(100vh-9rem)] overflow-hidden border-strong bg-cream lg:grid-cols-[18rem_1fr]">
-      <aside className="border-b-2 border-ink bg-paper lg:border-r-2 lg:border-b-0">
-        <div className="border-b-2 border-ink px-4 py-4">
-          <h2 className="font-display text-sm font-bold tracking-[0.02em]">
-            Conversations
-          </h2>
-          <p className="meta-caps mt-1">
-            {formatNumber(conversations.length)} threads
-          </p>
-        </div>
-        <div className="flex max-h-64 gap-2 overflow-auto p-2 lg:max-h-[calc(100vh-15rem)] lg:block lg:space-y-2">
-          {conversations.map((conversation) => (
-            <button
-              key={conversation.conversation}
-              type="button"
-              onClick={() => onSelectConversation(conversation.conversation)}
-              className={cn(
-                "w-60 shrink-0 border-strong bg-cream px-3 py-3 text-left shadow-press transition hover:-translate-x-0.5 hover:-translate-y-0.5 motion-reduce:transform-none lg:w-full",
-                selectedConversation === conversation.conversation &&
-                  "bg-receipt",
-              )}
-            >
-              <span
-                dir="auto"
-                className="block truncate font-display text-sm font-bold text-ink"
-              >
-                {conversation.conversation}
-              </span>
-              <span
-                dir="auto"
-                className="mt-1 block truncate font-body text-xs text-body"
-              >
-                {conversation.lastSnippet ?? "No text preview"}
-              </span>
-              <span className="mt-2 inline-flex">
-                <CapsuleBadge className="text-[0.65rem]">
-                  {formatNumber(conversation.messageCount)}
-                </CapsuleBadge>
-              </span>
-            </button>
-          ))}
-        </div>
-      </aside>
+    <div className="space-y-4">
+      <p className="font-body text-[15px] leading-7 text-body">
+        Browse every thread as a quiet ledger — pick a conversation, then scroll
+        the messages.
+      </p>
 
-      <section className="flex min-w-0 flex-col bg-paper/40">
-        <div className="border-b-2 border-ink bg-cream px-5 py-4">
-          <h2
-            dir="auto"
-            className="truncate font-display text-base font-bold tracking-[0.02em]"
-          >
-            {selectedConversation ?? "Choose a conversation"}
-          </h2>
-        </div>
-
-        {loading ? (
-          <StatePanel
-            kind="loading"
-            title="Reading messages"
-            description="The worker is loading this conversation from the local database."
-            className="m-5 flex-1"
-          />
-        ) : selectedConversation === null ? (
-          <StatePanel
-            icon={MessageCircle}
-            title="Choose a conversation"
-            description="Select a thread to browse its messages."
-            className="m-5 flex-1"
-          />
-        ) : messages.length === 0 ? (
-          <StatePanel
-            title="This conversation is empty"
-            description="No supported messages were found in this thread."
-            className="m-5 flex-1"
-          />
-        ) : (
-          <div className="flex-1 overflow-auto px-4 py-5 sm:px-7">
-            {hasMore ? (
-              <div className="mb-6 text-center">
-                <PressButton onClick={onLoadMore}>
-                  <ChevronUp aria-hidden="true" className="size-4" />
-                  Load earlier messages
-                </PressButton>
-              </div>
-            ) : null}
-            <ol className="mx-auto max-w-3xl space-y-3">
-              {messages.map((message, index) => (
-                <li
-                  key={`${String(message.sentAt)}-${message.sender}-${index}`}
-                  className="max-w-[88%] border-[1.5px] border-ink bg-cream px-4 py-3 sm:max-w-[76%]"
-                  style={{
-                    borderLeftWidth: "4px",
-                    borderLeftColor: "var(--teal)",
-                  }}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-                    <span
-                      dir="auto"
-                      className="font-display text-xs tracking-[0.02em] text-ink"
-                    >
-                      {message.sender}
-                    </span>
-                    <time
-                      dateTime={new Date(message.sentAt).toISOString()}
-                      className="meta-caps"
-                    >
-                      {formatDateTime(message.sentAt)}
-                    </time>
-                  </div>
-                  {message.text ? (
-                    <p
-                      dir="auto"
-                      className="mt-2 whitespace-pre-wrap break-words font-body text-sm leading-6 text-ink"
-                    >
-                      {message.text}
-                    </p>
-                  ) : (
-                    <p className="mt-2 inline-flex items-center gap-2 font-body text-sm text-body">
-                      <Paperclip aria-hidden="true" className="size-3.5" />
-                      Media attachment
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ol>
+      <div className="grid min-h-[28rem] gap-0 border border-ink/20 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
+        <aside className="border-b border-ink/20 lg:border-b-0 lg:border-e">
+          <div className="border-b border-ink/20 px-3 py-3">
+            <p className="meta-caps text-[11px] text-body">
+              {formatNumber(conversations.length)} threads
+            </p>
           </div>
-        )}
-      </section>
+          <div className="flex max-h-56 gap-0 overflow-auto lg:max-h-[min(70vh,40rem)] lg:block">
+            {conversations.map((conversation) => (
+              <button
+                key={conversation.conversation}
+                type="button"
+                onClick={() => onSelectConversation(conversation.conversation)}
+                className={cn(
+                  "flex min-w-[12rem] flex-col gap-1 border-b border-ink/20 px-3 py-3 text-start transition-colors duration-150 lg:min-w-0 lg:w-full",
+                  selectedConversation === conversation.conversation
+                    ? "bg-teal-wash"
+                    : "hover:bg-teal-wash",
+                )}
+              >
+                <span
+                  dir="auto"
+                  className="block truncate font-display text-xs text-ink"
+                >
+                  {conversation.conversation}
+                </span>
+                <span
+                  dir="auto"
+                  className="block truncate font-body text-[13px] text-body"
+                >
+                  {conversation.lastSnippet ?? "No text preview"}
+                </span>
+                <span className="meta-caps text-[10px] text-body">
+                  {formatNumber(conversation.messageCount)} messages
+                </span>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <section className="flex min-w-0 flex-col">
+          <div className="border-b border-ink/20 px-4 py-3">
+            <h2
+              dir="auto"
+              className="truncate font-display text-[15px] font-bold text-ink"
+            >
+              {selectedConversation ?? "Choose a conversation"}
+            </h2>
+            {selectedConversation ? (
+              <p className="mt-0.5 font-body text-[13px] text-body">
+                Messages stay on this device. Scroll up for earlier ones.
+              </p>
+            ) : null}
+          </div>
+
+          {loading ? (
+            <StatePanel
+              kind="loading"
+              title="Reading messages"
+              description="The worker is loading this conversation from the local database."
+              className="m-4 flex-1"
+            />
+          ) : selectedConversation === null ? (
+            <StatePanel
+              icon={MessageCircle}
+              title="Choose a conversation"
+              description="Select a thread to browse its messages."
+              className="m-4 flex-1"
+            />
+          ) : messages.length === 0 ? (
+            <StatePanel
+              title="This conversation is empty"
+              description="No supported messages were found in this thread."
+              className="m-4 flex-1"
+            />
+          ) : (
+            <div className="flex-1 overflow-auto px-2 py-2 sm:px-4">
+              {hasMore ? (
+                <div className="mb-2 text-center">
+                  <button
+                    type="button"
+                    onClick={onLoadMore}
+                    className="font-display text-[11px] uppercase tracking-[0.08em] text-teal hover:underline"
+                  >
+                    Load earlier messages
+                  </button>
+                </div>
+              ) : null}
+              <ol>
+                {messages.map((message, index) => (
+                  <li
+                    key={`${String(message.sentAt)}-${message.sender}-${index}`}
+                    className="border-b border-ink/20 px-2 py-3"
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                      <span
+                        dir="auto"
+                        className="font-display text-xs text-teal"
+                      >
+                        {message.sender}
+                      </span>
+                      <time
+                        dateTime={new Date(message.sentAt).toISOString()}
+                        className="meta-caps text-[10px] text-body"
+                      >
+                        {formatDateTime(message.sentAt)}
+                      </time>
+                    </div>
+                    {message.text ? (
+                      <p
+                        dir="auto"
+                        className="mt-1.5 whitespace-pre-wrap break-words font-body text-[15px] leading-6 text-ink"
+                      >
+                        {message.text}
+                      </p>
+                    ) : (
+                      <p className="mt-1.5 inline-flex items-center gap-2 font-body text-sm text-body">
+                        <Paperclip aria-hidden="true" className="size-3.5" />
+                        Media attachment
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

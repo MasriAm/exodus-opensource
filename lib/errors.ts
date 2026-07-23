@@ -43,6 +43,13 @@ export function friendlyError(
   if (message.includes("memory") || message.includes("allocation")) {
     return "The browser ran out of memory while reading this export. Close other tabs and try again.";
   }
+  if (
+    error.name === "QueryTimeoutError" ||
+    message.includes("timed out") ||
+    message.includes("worker operation timed out")
+  ) {
+    return "The private worker timed out — often after the tab was backgrounded. Try again, or reload the desk.";
+  }
 
   return fallback;
 }

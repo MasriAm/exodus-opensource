@@ -51,7 +51,7 @@ export function ArchiveDropzone({
     <div className="w-full">
       <div
         className={cn(
-          "relative border-2 border-dashed border-ink/60 bg-cream/40 p-8 transition sm:p-12",
+          "relative border-2 border-dashed border-ink/60 bg-cream/40 p-4 transition sm:p-6",
           dragActive && "border-teal bg-cream",
           busy && "pointer-events-none opacity-40",
         )}
@@ -80,10 +80,10 @@ export function ArchiveDropzone({
         >
           <ArrowUpRight
             aria-hidden="true"
-            className="size-10 text-body"
+            className="size-6 text-body sm:size-8"
             strokeWidth={1.5}
           />
-          <p className="mt-5 max-w-md font-body text-base leading-7 text-body">
+          <p className="mt-2 max-w-md font-body text-[14px] font-medium leading-6 text-ink/85 sm:mt-3 sm:text-[15px]">
             Click or drag &amp; drop to upload your export
           </p>
         </button>
@@ -102,7 +102,7 @@ export function ArchiveDropzone({
       </div>
 
       {!busy ? (
-        <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <PressButton onClick={onDemo}>Try a synthetic export</PressButton>
           <button
             type="button"

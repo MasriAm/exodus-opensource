@@ -4,7 +4,6 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Search } from "lucide-react";
 
 import { Mark } from "@/components/capsule/mark";
-import { PressButton } from "@/components/capsule/press-button";
 import { StatePanel } from "@/components/state-panel";
 import { formatDateTime, formatNumber } from "@/lib/format";
 
@@ -97,32 +96,37 @@ export function SearchView({
     .filter(Boolean);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      <p className="font-body text-[15px] leading-7 text-body">
+        Find a phrase, name, or date across every thread — the query never leaves
+        this browser.
+      </p>
+
       <form
         onSubmit={submit}
-        className="flex flex-col gap-3 border-b-2 border-ink bg-cream px-3 py-3 sm:flex-row sm:items-end"
+        className="flex flex-col gap-3 border-b border-ink/20 py-2 sm:flex-row sm:items-end"
         role="search"
       >
-        <label className="flex min-w-0 flex-1 flex-col gap-2">
-          <span className="meta-caps">Search</span>
-          <span className="flex items-center gap-3">
-            <Search aria-hidden="true" className="size-5 shrink-0 text-body" />
-            <input
-              value={term}
-              onChange={(event) => setTerm(event.target.value)}
-              dir="auto"
-              placeholder='from:sara in:"group" after:2019 has:media …'
-              className="h-10 min-w-0 flex-1 border-0 bg-transparent font-display text-base text-ink outline-none placeholder:text-body"
-            />
-          </span>
+        <label className="flex min-w-0 flex-1 items-center gap-3">
+          <Search aria-hidden="true" className="size-4 shrink-0 text-body" />
+          <input
+            value={term}
+            onChange={(event) => setTerm(event.target.value)}
+            dir="auto"
+            placeholder='from:sara in:"group" after:2019 has:media'
+            className="h-10 min-w-0 flex-1 bg-transparent font-display text-[15px] text-ink outline-none placeholder:text-body"
+          />
         </label>
-        <PressButton type="submit" disabled={loading || term.trim().length < 1}>
+        <button
+          type="submit"
+          disabled={loading || term.trim().length < 1}
+          className="font-display text-[11px] uppercase tracking-[0.08em] text-teal hover:underline disabled:opacity-40"
+        >
           {loading ? "Searching…" : "Search"}
-        </PressButton>
+        </button>
       </form>
-      <p className="font-body text-xs text-body">
-        Tokens: <Mark>from:</Mark> <Mark>in:</Mark> <Mark>before:</Mark>{" "}
-        <Mark>after:</Mark> <Mark>has:media</Mark>
+      <p className="font-display text-[11px] uppercase tracking-[0.06em] text-body">
+        Tokens: from: · in: · before: · after: · has:media
       </p>
 
       {error ? (
@@ -140,8 +144,8 @@ export function SearchView({
       ) : !hasSearched ? (
         <StatePanel
           icon={Search}
-          title="Find a moment"
-          description="Search every message without sending a query—or your archive—anywhere."
+          title="Type a word to begin"
+          description="Results appear as quiet rows — never as an error when nothing matches."
         />
       ) : results.length === 0 ? (
         <StatePanel
@@ -149,58 +153,55 @@ export function SearchView({
           description="Try another word, spelling, Arabic phrase, or search token."
         />
       ) : (
-        <section className="border-strong bg-cream p-5 shadow-press sm:p-7">
-          <div className="mb-6 flex items-end justify-between gap-4">
-            <div>
-              <p className="meta-caps">Results</p>
-              <h2 className="mt-1 font-display text-xl font-bold">
-                {formatNumber(results.length)} matches
-              </h2>
-            </div>
-            <p className="meta-caps">
+        <section>
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-ink/20 pb-3">
+            <h2 className="font-display text-[17px] font-bold text-ink">
+              {formatNumber(results.length)} matches
+            </h2>
+            <p className="font-display text-[11px] uppercase tracking-[0.08em] text-body">
               {formatNumber(grouped.size)} conversations
             </p>
           </div>
-          <div className="space-y-7">
+          <div className="space-y-8">
             {[...grouped.entries()].map(([conversation, hits]) => (
               <section key={conversation}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 dir="auto" className="font-display text-base font-bold">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h3 dir="auto" className="font-display text-xs text-ink">
                     {conversation}
                   </h3>
                   {onOpenConversation ? (
                     <button
                       type="button"
-                      className="font-display text-xs text-teal underline underline-offset-4"
+                      className="font-display text-[11px] uppercase tracking-[0.08em] text-teal hover:underline"
                       onClick={() => onOpenConversation(conversation)}
                     >
                       Open thread
                     </button>
                   ) : null}
                 </div>
-                <ol className="mt-3 divide-y divide-ink/20 border-strong bg-receipt">
+                <ol className="mt-2 border-y border-ink/20">
                   {hits.map((hit, index) => (
                     <li
                       key={`${String(hit.sentAt)}-${hit.sender}-${index}`}
-                      className="p-4"
+                      className="border-b border-ink/20 py-3 last:border-b-0"
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
                         <span
                           dir="auto"
-                          className="font-display tracking-[0.02em] text-teal"
+                          className="font-display text-xs text-teal"
                         >
                           {hit.sender}
                         </span>
                         <time
                           dateTime={new Date(hit.sentAt).toISOString()}
-                          className="meta-caps"
+                          className="font-display text-[11px] uppercase tracking-[0.08em] text-body"
                         >
                           {formatDateTime(hit.sentAt)}
                         </time>
                       </div>
                       <p
                         dir="auto"
-                        className="mt-2 whitespace-pre-wrap break-words font-body text-sm leading-6 text-ink"
+                        className="mt-2 whitespace-pre-wrap break-words font-body text-[15px] leading-7 text-ink"
                       >
                         {highlightSnippet(
                           hit.snippet,

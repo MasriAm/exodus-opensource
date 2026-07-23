@@ -1,5 +1,12 @@
 import * as Comlink from "comlink";
 
+import {
+  COUNTS_TIMEOUT_MS,
+  DESK_QUERY_TIMEOUT_MS,
+  INGEST_TIMEOUT_MS,
+  VIEW_QUERY_TIMEOUT_MS,
+  withTimeout,
+} from "./query-timeout";
 import type {
   ActivityTimelineParams,
   ActivityTimelineResult,
@@ -66,7 +73,11 @@ export function createWorkerClient(): WorkerClient {
     ...args: QueryArgs<Name>
   ): Promise<QueryResultByName[Name]> => {
     ensureActive();
-    return remote.query(name, ...args) as Promise<QueryResultByName[Name]>;
+    return withTimeout(
+      remote.query(name, ...args) as Promise<QueryResultByName[Name]>,
+      DESK_QUERY_TIMEOUT_MS,
+      `query:${String(name)}`,
+    );
   };
 
   return {
@@ -75,12 +86,17 @@ export function createWorkerClient(): WorkerClient {
       onProgress: IngestProgressCallback,
     ): Promise<IngestSummary> {
       ensureActive();
-      return remote.ingest(file, Comlink.proxy(onProgress));
+      return withTimeout(
+        remote.ingest(file, Comlink.proxy(onProgress)),
+        INGEST_TIMEOUT_MS,
+        "ingest",
+      );
     },
     query,
     conversationList: (params) => query("conversationList", params),
     messagesPage: (params) => query("messagesPage", params),
-    counts: () => query("counts"),
+    counts: () =>
+      withTimeout(query("counts"), COUNTS_TIMEOUT_MS, "counts"),
     search: (params) => query("search", params),
     activityTimeline: (params) => query("activityTimeline", params),
     mediaList: (params) => query("mediaList", params),
@@ -88,14 +104,22 @@ export function createWorkerClient(): WorkerClient {
     exportMetadata: () => query("exportMetadata"),
     readMediaBlob(zipPath: string): Promise<Blob> {
       ensureActive();
-      return remote.readMediaBlob(zipPath);
+      return withTimeout(
+        remote.readMediaBlob(zipPath),
+        VIEW_QUERY_TIMEOUT_MS,
+        `readMediaBlob:${zipPath}`,
+      );
     },
     exportTable(
       table: ExportTable,
       format: ExportFormat,
     ): Promise<Blob> {
       ensureActive();
-      return remote.exportTable(table, format);
+      return withTimeout(
+        remote.exportTable(table, format),
+        DESK_QUERY_TIMEOUT_MS,
+        `exportTable:${table}`,
+      );
     },
     markArchiveLive(): void {
       (globalThis as ExodusGlobal).__exodusArchiveLive = true;
@@ -109,7 +133,11 @@ export function createWorkerClient(): WorkerClient {
       }
       disposed = true;
       (globalThis as ExodusGlobal).__exodusArchiveLive = false;
-      remote[Comlink.releaseProxy]();
+      try {
+        remote[Comlink.releaseProxy]();
+      } catch {
+        // ignore
+      }
       worker.terminate();
     },
   };
@@ -133,6 +161,12 @@ export function disposeWorkerClient(): void {
   } catch {
     // ignore
   }
+}
+
+/** Tear down a wedged worker and return a fresh client. */
+export function resetWorkerClient(): WorkerClient {
+  disposeWorkerClient();
+  return getWorkerClient();
 }
 
 export type {

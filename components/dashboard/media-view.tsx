@@ -40,6 +40,12 @@ function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
 
     const observer = new IntersectionObserver(
       (entries) => {
+        // Background tabs often report everything as non-intersecting;
+        // don't revoke/reload blobs while the tab is hidden — that floods
+        // the exclusive worker queue and can wedge DuckDB after freezes.
+        if (typeof document !== "undefined" && document.hidden) {
+          return;
+        }
         const inRange = entries.some((entry) => entry.isIntersecting);
         setVisible(inRange);
         if (!inRange) {
@@ -102,15 +108,15 @@ function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
           className="w-full text-start"
           onClick={() => onOpen?.(url, item)}
         >
-          <VintagePhoto compact>
+          <div className="rounded-[2px] bg-cream p-1 shadow-[0_2px_8px_rgba(0,0,0,0.12)]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={url}
               alt={label}
               loading="lazy"
-              className="target-photo aspect-square w-full object-cover"
+              className="aspect-square w-full rounded-[1px] object-cover"
             />
-          </VintagePhoto>
+          </div>
         </button>
       ) : (
         <div className="overflow-hidden border-strong bg-cream">
@@ -213,8 +219,8 @@ export function MediaView({
     return (
       <StatePanel
         icon={ImageIcon}
-        title="No media found"
-        description="This export does not contain supported image, video, or audio entries."
+        title="No media match"
+        description="Nothing shows for these filters — or this export has no supported media."
       />
     );
   }
@@ -222,15 +228,12 @@ export function MediaView({
   return (
     <section>
       <div className="mb-5">
-        <h2 className="font-display text-xl font-bold tracking-[0.02em]">
-          Media gallery
-        </h2>
-        <p className="mt-1 font-body text-sm text-body">
-          Files are decompressed only as they approach the screen. Hover or tap
-          to reveal the original.
+        <p className="font-body text-[15px] leading-7 text-body">
+          Photographs and attachments from the export — opened only as they
+          enter view, never uploaded.
         </p>
       </div>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {items.map((item) => (
           <LazyMedia
             key={item.zipPath}

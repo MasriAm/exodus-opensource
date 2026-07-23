@@ -13,6 +13,7 @@ import {
 import type { IngestProgress, IngestSummary } from "@/lib/db/types";
 import {
   getWorkerClient,
+  resetWorkerClient,
   type WorkerClient,
 } from "@/lib/worker-client";
 
@@ -30,6 +31,8 @@ type ArchiveSessionValue = {
   markIngesting: (progress: IngestProgress | null) => void;
   markLive: (summary: IngestSummary) => void;
   markReady: () => void;
+  /** Dispose a wedged worker and try to recover the in-memory archive. */
+  reloadSession: () => Promise<"live" | "ready">;
 };
 
 const ArchiveSessionContext = createContext<ArchiveSessionValue | null>(null);
@@ -143,6 +146,17 @@ export function ArchiveSessionProvider({ children }: { children: ReactNode }) {
     setStatus((current) => (current === "live" ? "live" : "ready"));
   }, []);
 
+  const reloadSession = useCallback(async (): Promise<"live" | "ready"> => {
+    setStatus("booting");
+    setIngestProgress(null);
+    const client = resetWorkerClient();
+    setApi(client);
+    // A reset always drops the in-memory DuckDB — the archive must be re-imported.
+    writeLiveFlag(false);
+    setStatus("ready");
+    return "ready";
+  }, []);
+
   const value = useMemo(
     () => ({
       api,
@@ -152,6 +166,7 @@ export function ArchiveSessionProvider({ children }: { children: ReactNode }) {
       markIngesting,
       markLive,
       markReady,
+      reloadSession,
     }),
     [
       api,
@@ -160,6 +175,7 @@ export function ArchiveSessionProvider({ children }: { children: ReactNode }) {
       markIngesting,
       markLive,
       markReady,
+      reloadSession,
       status,
     ],
   );

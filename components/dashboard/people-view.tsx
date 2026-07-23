@@ -1,26 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-
-import { CapsuleCard } from "@/components/capsule/card";
-import { Mark } from "@/components/capsule/mark";
-import { PressButton } from "@/components/capsule/press-button";
-import { Receipt } from "@/components/capsule/receipt";
+import { PhotoThumb } from "@/components/capsule/photo-thumb";
 import { StatePanel } from "@/components/state-panel";
-import { VintagePhoto } from "@/components/capsule/vintage-photo";
 import { formatDate, formatNumber } from "@/lib/format";
-import type {
-  PeopleListItem,
-  PersonDetailResult,
-} from "@/lib/db/types";
+import type { PeopleListItem, PersonDetailResult } from "@/lib/db/types";
+import { cn } from "@/lib/utils";
 
 type PeopleViewProps = {
   people: PeopleListItem[];
@@ -34,45 +18,6 @@ type PeopleViewProps = {
   readBlob: (zipPath: string) => Promise<Blob>;
 };
 
-function MediaThumb({
-  zipPath,
-  readBlob,
-}: {
-  zipPath: string;
-  readBlob: (zipPath: string) => Promise<Blob>;
-}) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let active = true;
-    let created: string | null = null;
-    void readBlob(zipPath)
-      .then((blob) => {
-        const next = URL.createObjectURL(blob);
-        if (!active) {
-          URL.revokeObjectURL(next);
-          return;
-        }
-        created = next;
-        setUrl(next);
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-      if (created) URL.revokeObjectURL(created);
-    };
-  }, [zipPath, readBlob]);
-  return (
-    <VintagePhoto compact className="w-full">
-      {url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="" className="target-photo aspect-square w-full object-cover" />
-      ) : (
-        <div className="aspect-square bg-paper" />
-      )}
-    </VintagePhoto>
-  );
-}
-
 export function PeopleView({
   people,
   loading,
@@ -85,7 +30,9 @@ export function PeopleView({
   readBlob,
 }: PeopleViewProps) {
   if (error) {
-    return <StatePanel kind="error" title="People index unavailable" description={error} />;
+    return (
+      <StatePanel kind="error" title="People index unavailable" description={error} />
+    );
   }
   if (loading) {
     return (
@@ -97,161 +44,222 @@ export function PeopleView({
     );
   }
   if (people.length === 0) {
-    return null;
+    return (
+      <StatePanel
+        title="No people match these filters"
+        description="Widen the time range or clear a person filter to see the full index."
+      />
+    );
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
-      <div className="space-y-2">
-        {people.map((person) => (
-          <button
-            key={`${person.platform}:${person.conversation}`}
-            type="button"
-            onClick={() => onSelect(person.conversation)}
-            className={`w-full border-strong p-3 text-start shadow-press transition ${
-              selected === person.conversation
-                ? "bg-ink text-cream"
-                : "bg-cream text-ink hover:-translate-y-0.5"
-            }`}
-          >
-            <p className="font-display text-sm" dir="auto">
-              {person.conversation}
-            </p>
-            <p
-              className={`mt-1 font-body text-xs ${
-                selected === person.conversation ? "text-cream/80" : "text-body"
-              }`}
-            >
-              {formatNumber(person.messageCount)} messages
-            </p>
-          </button>
-        ))}
-      </div>
+    <div className="space-y-6">
+      <p className="font-body text-[15px] leading-7 text-body">
+        Everyone you wrote with, ranked by volume. Pick a name to see the shape
+        of the thread — first words, streaks, and shared photos.
+      </p>
 
-      <div>
-        {detailLoading || !detail ? (
-          <StatePanel
-            kind="loading"
-            title="Pulling the file"
-            description="Computing streaks, silence, and shared media."
-          />
-        ) : (
-          <div className="space-y-6">
-            <div>
-              <h2 className="font-display text-2xl font-bold text-ink" dir="auto">
-                {detail.conversation}
-              </h2>
-              <p className="mt-2 font-body text-body">
-                {detail.platform ? <Mark variant="dark">{detail.platform}</Mark> : null}{" "}
-                {formatNumber(detail.messageCount)} messages ·{" "}
-                {formatNumber(detail.participantCount)} senders
-              </p>
-              <PressButton
-                className="mt-4"
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+        <ul className="border-y border-ink/20">
+          {people.map((person) => (
+            <li key={`${person.platform}:${person.conversation}`}>
+              <button
                 type="button"
-                onClick={() => onOpenMessages(detail.conversation)}
+                onClick={() => onSelect(person.conversation)}
+                className={cn(
+                  "flex h-12 w-full items-center justify-between gap-3 border-b border-ink/20 text-start transition-colors duration-150 last:border-b-0",
+                  selected === person.conversation
+                    ? "bg-teal-wash"
+                    : "hover:bg-cream",
+                )}
               >
-                Open conversation
-              </PressButton>
-            </div>
+                <span
+                  dir="auto"
+                  className="min-w-0 truncate font-display text-xs text-ink"
+                >
+                  {person.conversation}
+                </span>
+                <span className="shrink-0 font-display text-xs text-body">
+                  {formatNumber(person.messageCount)}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
 
-            <Receipt
-              title="Correspondence"
-              rows={[
-                ...(detail.firstMessageAtMs
-                  ? [
-                      {
-                        label: "First message",
-                        value: formatDate(detail.firstMessageAtMs),
-                      },
-                    ]
-                  : []),
-                ...(detail.lastMessageAtMs
-                  ? [
-                      {
-                        label: "Last message",
-                        value: formatDate(detail.lastMessageAtMs),
-                      },
-                    ]
-                  : []),
-                {
-                  label: "Longest streak",
-                  value: `${formatNumber(detail.longestStreakDays)} days`,
-                },
-                ...(detail.longestSilenceDays > 0
-                  ? [
-                      {
-                        label: "Longest silence",
-                        value: `${formatNumber(detail.longestSilenceDays)} days`,
-                      },
-                    ]
-                  : []),
-              ]}
+        <div>
+          {detailLoading || !detail ? (
+            <StatePanel
+              kind="loading"
+              title="Pulling the file"
+              description="Computing streaks, silence, and shared media."
             />
-
-            {detail.senderBalance.length > 0 ? (
-              <CapsuleCard className="p-4">
-                <p className="meta-caps mb-3 text-body">Who messaged whom</p>
-                <ul className="space-y-2">
-                  {detail.senderBalance.map((row) => (
-                    <li
-                      key={row.sender}
-                      className="flex justify-between gap-3 border-b border-ink/15 pb-2 font-body text-sm"
-                    >
-                      <span dir="auto">{row.sender}</span>
-                      <span>{formatNumber(row.messageCount)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CapsuleCard>
-            ) : null}
-
-            {detail.monthlyVolume.length > 0 ? (
-              <CapsuleCard className="p-4">
-                <p className="meta-caps mb-3 text-body">Volume over time</p>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={detail.monthlyVolume.map((row) => ({
-                        label: formatDate(row.monthStartMs),
-                        count: row.messageCount,
-                      }))}
-                    >
-                      <XAxis dataKey="label" hide />
-                      <YAxis hide />
-                      <Tooltip />
-                      <Bar dataKey="count" fill="var(--teal)" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CapsuleCard>
-            ) : null}
-
-            {detail.firstMessage ? (
-              <CapsuleCard className="p-4">
-                <p className="meta-caps text-body">First words</p>
-                <p className="mt-2 font-body text-ink" dir="auto">
-                  {detail.firstMessage.text}
-                </p>
-              </CapsuleCard>
-            ) : null}
-
-            {detail.media.length > 0 ? (
+          ) : (
+            <div className="space-y-8">
               <div>
-                <p className="meta-caps mb-3 text-body">Shared media</p>
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                  {detail.media.map((item) => (
-                    <MediaThumb
-                      key={item.rowId}
-                      zipPath={item.zipPath}
-                      readBlob={readBlob}
-                    />
-                  ))}
-                </div>
+                <h2
+                  className="font-display text-[17px] font-bold text-ink"
+                  dir="auto"
+                >
+                  {detail.conversation}
+                </h2>
+                <p className="mt-2 font-body text-[15px] text-body">
+                  {detail.platform ? `${detail.platform} · ` : null}
+                  {formatNumber(detail.messageCount)} messages ·{" "}
+                  {formatNumber(detail.participantCount)} senders
+                </p>
+                <button
+                  type="button"
+                  className="mt-3 font-display text-[11px] uppercase tracking-[0.08em] text-teal hover:underline"
+                  onClick={() => onOpenMessages(detail.conversation)}
+                >
+                  Open conversation →
+                </button>
               </div>
-            ) : null}
-          </div>
-        )}
+
+              <dl className="border-y border-ink/20">
+                {(
+                  [
+                    detail.firstMessageAtMs
+                      ? {
+                          label: "First message",
+                          value: formatDate(detail.firstMessageAtMs),
+                        }
+                      : null,
+                    detail.lastMessageAtMs
+                      ? {
+                          label: "Last message",
+                          value: formatDate(detail.lastMessageAtMs),
+                        }
+                      : null,
+                    {
+                      label: "Longest streak",
+                      value: `${formatNumber(detail.longestStreakDays)} days`,
+                    },
+                    detail.longestSilenceDays > 0
+                      ? {
+                          label: "Longest silence",
+                          value: `${formatNumber(detail.longestSilenceDays)} days`,
+                        }
+                      : null,
+                  ] as const
+                )
+                  .filter(
+                    (row): row is { label: string; value: string } => row !== null,
+                  )
+                  .map((row) => (
+                    <div
+                      key={row.label}
+                      className="flex items-baseline justify-between gap-4 border-b border-ink/20 py-3 last:border-b-0"
+                    >
+                      <dt className="font-display text-[11px] uppercase tracking-[0.08em] text-ink/70">
+                        {row.label}
+                      </dt>
+                      <dd className="text-end font-body text-[15px] font-medium text-ink">
+                        {row.value}
+                      </dd>
+                    </div>
+                  ))}
+              </dl>
+
+              {detail.senderBalance.length > 0 ? (
+                <section>
+                  <h3 className="font-display text-[17px] font-bold text-ink">
+                    {">>"} Who wrote
+                  </h3>
+                  <p className="mt-1 font-body text-[15px] text-body">
+                    Message count by sender in this thread.
+                  </p>
+                  <ul className="mt-4 border-y border-ink/20">
+                    {detail.senderBalance.map((row) => (
+                      <li
+                        key={row.sender}
+                        className="flex h-12 items-center justify-between gap-3 border-b border-ink/20 last:border-b-0"
+                      >
+                        <span dir="auto" className="truncate font-display text-xs text-ink">
+                          {row.sender}
+                        </span>
+                        <span className="font-display text-xs text-body">
+                          {formatNumber(row.messageCount)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+
+              {detail.monthlyVolume.length > 0 ? (
+                <section>
+                  <h3 className="font-display text-[17px] font-bold text-ink">
+                    {">>"} Volume by month
+                  </h3>
+                  <p className="mt-1 font-body text-[15px] text-body">
+                    How dense the months were — ink bars, not a chart library.
+                  </p>
+                  <ul className="mt-4 space-y-2">
+                    {detail.monthlyVolume.map((row) => {
+                      const max = Math.max(
+                        ...detail.monthlyVolume.map((entry) => entry.messageCount),
+                        1,
+                      );
+                      const width = Math.max(
+                        4,
+                        Math.round((row.messageCount / max) * 100),
+                      );
+                      return (
+                        <li key={row.monthStartMs} className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-3">
+                          <span className="font-display text-[11px] uppercase tracking-[0.06em] text-body">
+                            {formatDate(row.monthStartMs)}
+                          </span>
+                          <div className="h-2 bg-ink/10">
+                            <div
+                              className="h-full bg-heat-3"
+                              style={{ width: `${width}%` }}
+                            />
+                          </div>
+                          <span className="w-10 text-end font-display text-xs text-ink">
+                            {formatNumber(row.messageCount)}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ) : null}
+
+              {detail.firstMessage ? (
+                <section className="border-y border-ink/20 py-4">
+                  <h3 className="font-display text-[17px] font-bold text-ink">
+                    {">>"} First words
+                  </h3>
+                  <p className="mt-3 font-body text-[15px] leading-7 text-ink" dir="auto">
+                    “{detail.firstMessage.text}”
+                  </p>
+                </section>
+              ) : null}
+
+              {detail.media.length > 0 ? (
+                <section>
+                  <h3 className="font-display text-[17px] font-bold text-ink">
+                    {">>"} Shared photographs
+                  </h3>
+                  <p className="mt-1 font-body text-[15px] text-body">
+                    Media that traveled in this conversation.
+                  </p>
+                  <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-4">
+                    {detail.media.map((item) => (
+                      <PhotoThumb
+                        key={item.rowId}
+                        zipPath={item.zipPath}
+                        readBlob={readBlob}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

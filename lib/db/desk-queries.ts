@@ -1,5 +1,7 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
+import { computeStreakSilence } from "@/lib/streak-facts";
+
 import {
   messagesWhere,
   mediaWhere,
@@ -21,7 +23,12 @@ import type {
   DeskHomeResult,
   DayMessagesParams,
   DayMessagesResult,
+  FootprintCall,
+  FootprintFollowEvent,
+  FootprintPersonalInfo,
+  FootprintPersonalInfoField,
   FootprintResult,
+  FootprintSystemNote,
   MediaItem,
   MediaKind,
   MessageHeatmapParams,
@@ -601,19 +608,7 @@ export async function personDetail(
     msg.params,
   );
   const days = dayRows.map((row) => readNumber(row, "day_ms"));
-  let longestStreakDays = days.length > 0 ? 1 : 0;
-  let longestSilenceDays = 0;
-  let streak = 1;
-  for (let i = 1; i < days.length; i += 1) {
-    const gapDays = Math.round((days[i] - days[i - 1]) / 86_400_000);
-    if (gapDays === 1) {
-      streak += 1;
-      longestStreakDays = Math.max(longestStreakDays, streak);
-    } else {
-      streak = 1;
-      longestSilenceDays = Math.max(longestSilenceDays, gapDays - 1);
-    }
-  }
+  const { longestStreakDays, longestSilenceDays } = computeStreakSilence(days);
 
   const media = (
     await preparedRows(
@@ -816,13 +811,186 @@ export async function footprint(
     value: readString(row, "value"),
   }));
 
+  const followEvents: FootprintFollowEvent[] = (
+    await preparedRows(
+      connection,
+      `
+        SELECT
+          kind,
+          COALESCE(
+            nullif(trim(json_extract_string(payload, '$.value')), ''),
+            nullif(trim(json_extract_string(payload, '$.name')), '')
+          ) AS username,
+          epoch(occurred_at) * 1000.0 AS occurred_at_ms
+        FROM events
+        WHERE ${evt.clause}
+          AND kind IN ('follower', 'following')
+          AND COALESCE(
+            nullif(trim(json_extract_string(payload, '$.value')), ''),
+            nullif(trim(json_extract_string(payload, '$.name')), '')
+          ) IS NOT NULL
+        ORDER BY occurred_at DESC
+        LIMIT 100
+      `,
+      evt.params,
+    )
+  ).map((row) => ({
+    kind: readString(row, "kind") as "follower" | "following",
+    username: readString(row, "username"),
+    occurredAtMs: readNumber(row, "occurred_at_ms"),
+  }));
+
+  const personalInfo: FootprintPersonalInfo[] = (
+    await preparedRows(
+      connection,
+      `
+        SELECT
+          epoch(occurred_at) * 1000.0 AS occurred_at_ms,
+          COALESCE(json_extract_string(payload, '$.path'), '') AS path,
+          payload
+        FROM events
+        WHERE ${evt.clause}
+          AND kind = 'personal_info'
+        ORDER BY occurred_at DESC
+        LIMIT 50
+      `,
+      evt.params,
+    )
+  ).map((row) => ({
+    occurredAtMs: readNumber(row, "occurred_at_ms"),
+    path: readString(row, "path"),
+    fields: personalInfoFields(readString(row, "payload")),
+  }));
+
+  const calls: FootprintCall[] = (
+    await preparedRows(
+      connection,
+      `
+        SELECT
+          COALESCE(json_extract_string(payload, '$.media'), 'voice') AS media,
+          CAST(json_extract(payload, '$.durationSec') AS DOUBLE) AS duration_sec,
+          COALESCE(json_extract_string(payload, '$.conversation'), '') AS conversation,
+          json_extract_string(payload, '$.text') AS text,
+          epoch(occurred_at) * 1000.0 AS occurred_at_ms
+        FROM events
+        WHERE ${evt.clause}
+          AND kind = 'call'
+        ORDER BY occurred_at DESC
+        LIMIT 100
+      `,
+      evt.params,
+    )
+  ).map((row) => ({
+    media: readString(row, "media"),
+    durationSec: readNullableNumber(row, "duration_sec"),
+    conversation: readString(row, "conversation"),
+    text: readNullableString(row, "text"),
+    occurredAtMs: readNumber(row, "occurred_at_ms"),
+  }));
+
+  const systemNotes: FootprintSystemNote[] = (
+    await preparedRows(
+      connection,
+      `
+        SELECT
+          COALESCE(json_extract_string(payload, '$.conversation'), '') AS conversation,
+          COALESCE(json_extract_string(payload, '$.text'), '') AS text,
+          epoch(occurred_at) * 1000.0 AS occurred_at_ms
+        FROM events
+        WHERE ${evt.clause}
+          AND kind = 'system'
+          AND json_extract_string(payload, '$.text') IS NOT NULL
+          AND trim(json_extract_string(payload, '$.text')) <> ''
+        ORDER BY occurred_at DESC
+        LIMIT 100
+      `,
+      evt.params,
+    )
+  ).map((row) => ({
+    conversation: readString(row, "conversation"),
+    text: readString(row, "text"),
+    occurredAtMs: readNumber(row, "occurred_at_ms"),
+  }));
+
   return {
     comments,
     interestsByYear: [...interestsByYear.entries()]
       .map(([year, topics]) => ({ year, topics }))
       .sort((a, b) => b.year - a.year),
     profileHistory,
+    followEvents,
+    personalInfo,
+    calls,
+    systemNotes,
   };
+}
+
+function personalInfoFields(payloadJson: string): FootprintPersonalInfoField[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payloadJson);
+  } catch {
+    return [];
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return [];
+  }
+  const record = parsed as Record<string, unknown>;
+  const data =
+    typeof record.data === "object" &&
+    record.data !== null &&
+    !Array.isArray(record.data)
+      ? (record.data as Record<string, unknown>)
+      : record;
+
+  const fields: FootprintPersonalInfoField[] = [];
+  for (const [key, value] of Object.entries(data)) {
+    if (
+      key === "timestamp" ||
+      key === "timestamp_ms" ||
+      key === "creation_timestamp" ||
+      key === "created_timestamp" ||
+      key === "path"
+    ) {
+      continue;
+    }
+    const display = personalInfoValue(value);
+    if (display !== null) {
+      fields.push({ key, value: display });
+    }
+  }
+  return fields;
+}
+
+function personalInfoValue(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => personalInfoValue(item))
+      .filter((item): item is string => item !== null);
+    return parts.length > 0 ? parts.join(", ") : null;
+  }
+  if (typeof value === "object") {
+    const nested = value as Record<string, unknown>;
+    if (typeof nested.value === "string" && nested.value.trim().length > 0) {
+      return nested.value.trim();
+    }
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export async function surpriseMemory(
@@ -846,8 +1014,14 @@ export async function surpriseMemory(
         media_ref
       FROM messages
       WHERE ${msg.clause}
-        AND text IS NOT NULL
-        AND length(trim(text)) > 12
+        AND (
+          (text IS NOT NULL AND length(trim(text)) > 12)
+          OR (
+            media_ref IS NOT NULL
+            AND media_ref <> ''
+            AND media_ref NOT LIKE 'omitted://%'
+          )
+        )
       ORDER BY random()
       LIMIT 1
     `,

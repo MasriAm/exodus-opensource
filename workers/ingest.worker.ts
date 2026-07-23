@@ -63,10 +63,41 @@ let activeArchive: ActiveArchive | null = null;
 let exportFileSequence = 0;
 let operationTail: Promise<void> = Promise.resolve();
 
+const WORKER_OP_TIMEOUT_MS = 25_000;
+const WORKER_INGEST_TIMEOUT_MS = 10 * 60_000;
+
+function withWorkerTimeout<Result>(
+  operation: () => Promise<Result>,
+  label: string,
+  timeoutMs: number,
+): Promise<Result> {
+  return new Promise<Result>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new PublicWorkerError(`${label} timed out inside the worker.`));
+    }, timeoutMs);
+    operation().then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 function runExclusive<Result>(
   operation: () => Promise<Result>,
+  options?: { label?: string; timeoutMs?: number },
 ): Promise<Result> {
-  const result = operationTail.then(operation, operation);
+  const label = options?.label ?? "worker operation";
+  const timeoutMs = options?.timeoutMs ?? WORKER_OP_TIMEOUT_MS;
+  const result = operationTail.then(
+    () => withWorkerTimeout(operation, label, timeoutMs),
+    () => withWorkerTimeout(operation, label, timeoutMs),
+  );
   operationTail = result.then(
     () => undefined,
     () => undefined,
@@ -487,15 +518,22 @@ async function exportTable(
 
 const api: IngestApi = {
   ingest: (file, onProgress) =>
-    runExclusive(() => ingestArchive(file, onProgress)),
+    runExclusive(() => ingestArchive(file, onProgress), {
+      label: "ingest",
+      timeoutMs: WORKER_INGEST_TIMEOUT_MS,
+    }),
   query: <Name extends QueryName>(name: Name, ...args: QueryArgs<Name>) =>
-    runExclusive(() =>
-      runQuery(name, args[0] as QueryParamsByName[Name]),
-    ),
+    runExclusive(() => runQuery(name, args[0] as QueryParamsByName[Name]), {
+      label: `query:${String(name)}`,
+    }),
   readMediaBlob: (zipPath) =>
-    runExclusive(() => readMediaBlob(zipPath)),
+    runExclusive(() => readMediaBlob(zipPath), {
+      label: `readMediaBlob:${zipPath}`,
+    }),
   exportTable: (table, format) =>
-    runExclusive(() => exportTable(table, format)),
+    runExclusive(() => exportTable(table, format), {
+      label: `exportTable:${table}`,
+    }),
 };
 
 Comlink.expose(api);

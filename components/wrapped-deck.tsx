@@ -27,9 +27,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { toPng } from "html-to-image";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-
 import { CapsuleCard } from "@/components/capsule/card";
 import { Mark } from "@/components/capsule/mark";
 import { PressButton } from "@/components/capsule/press-button";
@@ -217,7 +214,7 @@ function SlideShell({
   const reduceMotion = useReducedMotion();
   return (
     <motion.div
-      className="mx-auto flex min-h-[70vh] w-full max-w-3xl flex-col justify-center px-5 py-10 sm:px-8"
+      className="mx-auto flex w-full max-w-3xl flex-col justify-center px-4 py-6 sm:min-h-full sm:px-8 sm:py-10"
       initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 24 }}
       animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
       exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -16 }}
@@ -225,7 +222,7 @@ function SlideShell({
     >
       {subline ? (
         <motion.p
-          className="mb-8 max-w-2xl font-body text-base leading-7 text-body sm:text-lg"
+          className="mb-6 max-w-2xl font-body text-base leading-7 text-body sm:mb-8 sm:text-lg"
           initial={reduceMotion ? false : { opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: reduceMotion ? 0 : 0.06, duration: 0.3 }}
@@ -265,9 +262,6 @@ export function WrappedDeck({
   const [interactive, setInteractive] = useState<InteractiveStates>(
     FALLBACK_LOADING_CAPTIONS.interactive,
   );
-  const [downloadError, setDownloadError] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState(false);
-  const [shareNode, setShareNode] = useState<HTMLDivElement | null>(null);
   const reduceMotion = useReducedMotion();
 
   useEffect(() => {
@@ -733,76 +727,15 @@ export function WrappedDeck({
     built.push({
       id: "finale",
       render: () => (
-        <SlideShell subline="A keepsake you can download — still private, still local.">
-          <SlideTitle accent="teal">Exodus</SlideTitle>
-          <div
-            ref={setShareNode}
-            className="mx-auto mt-8 aspect-square w-full max-w-md border-strong bg-cream p-8 shadow-press"
-          >
-            <p className="font-display text-sm tracking-[0.08em] text-teal">
-              {">>"} Exodus
-            </p>
-            <p className="mt-8 font-display text-5xl font-bold text-ink">
-              {formatNumber(data.totalMessages)}
-            </p>
-            <p className="mt-2 font-body text-body">messages reclaimed</p>
-            <div className="mt-10 grid grid-cols-2 gap-4 border-t border-ink/30 pt-6 font-body text-sm text-body">
-              <p>
-                <span className="block font-display text-2xl font-bold text-ink">
-                  {formatNumber(data.totalMedia)}
-                </span>
-                media
-              </p>
-              <p>
-                <span className="block font-display text-2xl font-bold text-ink">
-                  {formatNumber(data.longestStreakDays)}
-                </span>
-                day streak
-              </p>
-              <p className="col-span-2" dir="auto">
-                <span className="block truncate font-display text-lg font-bold text-ink">
-                  {data.topContacts[0]?.conversation ?? "—"}
-                </span>
-                top conversation
-              </p>
-            </div>
-          </div>
-          <PressButton
-            className="mt-6"
-            disabled={downloading}
-            onClick={() => {
-              if (!shareNode) {
-                return;
-              }
-              setDownloading(true);
-              setDownloadError(null);
-              const cream = getComputedStyle(document.documentElement)
-                .getPropertyValue("--cream")
-                .trim();
-              void toPng(shareNode, {
-                backgroundColor: cream || undefined,
-                pixelRatio: 2,
-                skipFonts: true,
-              })
-                .then((dataUrl) => {
-                  const anchor = document.createElement("a");
-                  anchor.download = "exodus-wrapped.png";
-                  anchor.href = dataUrl;
-                  anchor.click();
-                })
-                .catch(() => {
-                  setDownloadError("The image could not be created.");
-                })
-                .finally(() => setDownloading(false));
-            }}
-          >
-            {downloading ? "Creating…" : "Download card"}
+        <SlideShell subline="Your archive stays on this device. The dashboard is ready whenever you want the numbers again.">
+          <SlideTitle accent="teal">That&apos;s a wrap</SlideTitle>
+          <p className="mt-6 max-w-xl font-body text-base leading-7 text-body sm:text-lg">
+            {formatNumber(data.totalMessages)} messages,{" "}
+            {formatNumber(data.totalMedia)} media — privately counted.
+          </p>
+          <PressButton className="mt-10 px-6 py-3 text-base" onClick={goDashboard}>
+            Finish → Go to dashboard
           </PressButton>
-          {downloadError ? (
-            <p className="mt-3 text-sm text-coral" role="alert">
-              {downloadError}
-            </p>
-          ) : null}
         </SlideShell>
       ),
     });
@@ -814,8 +747,7 @@ export function WrappedDeck({
     cringePromptIndex,
     cringeRevealed,
     data,
-    downloadError,
-    downloading,
+    goDashboard,
     identitiesOpen,
     interactive,
     interestYear,
@@ -823,7 +755,6 @@ export function WrappedDeck({
     photoIndex,
     readMediaBlob,
     reduceMotion,
-    shareNode,
   ]);
 
   const go = useCallback(
@@ -929,10 +860,13 @@ export function WrappedDeck({
   const safeIndex = Math.min(index, slides.length - 1);
   const current = slides[safeIndex];
 
+  const navButtonClass =
+    "inline-flex min-h-12 min-w-[7.25rem] items-center justify-center border-strong bg-cream px-4 font-mono text-base font-bold tracking-[0.04em] text-ink shadow-press transition-[transform,box-shadow] enabled:hover:bg-receipt enabled:active:translate-x-0.5 enabled:active:translate-y-0.5 enabled:active:shadow-[2px_2px_0_var(--ink)] disabled:pointer-events-none disabled:opacity-30 motion-reduce:transition-none sm:min-h-[3.25rem] sm:min-w-[8.5rem] sm:px-5 sm:text-lg";
+
   return (
-    <main className="relative min-h-screen overflow-hidden bg-paper">
-      <header className="relative z-20 mx-auto flex max-w-5xl items-center justify-between px-5 py-4 sm:px-8">
-        <div className="flex items-center gap-2">
+    <main className="flex min-h-dvh flex-col bg-paper">
+      <header className="relative z-20 mx-auto flex w-full max-w-5xl shrink-0 items-center justify-between gap-3 px-5 py-3 sm:px-8 sm:py-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {slides.map((slide, slideIndex) => (
             <button
               key={slide.id}
@@ -940,7 +874,7 @@ export function WrappedDeck({
               aria-label={`Go to slide ${slideIndex + 1}`}
               aria-current={slideIndex === safeIndex}
               className={cn(
-                "size-2 rounded-full border border-ink transition",
+                "size-2.5 shrink-0 rounded-full border border-ink transition",
                 slideIndex === safeIndex ? "bg-ink" : "bg-transparent",
               )}
               onClick={() => setIndex(slideIndex)}
@@ -950,58 +884,63 @@ export function WrappedDeck({
         <button
           type="button"
           onClick={goDashboard}
-          className="font-display text-xs tracking-[0.02em] text-ink underline underline-offset-4"
+          className="shrink-0 font-mono text-xs tracking-[0.02em] text-body underline underline-offset-4"
         >
-          Skip to dashboard →
+          Skip to dashboard
         </button>
       </header>
 
       <div
-        className="relative"
+        className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
       >
         <button
           type="button"
           aria-label="Previous slide"
-          className="absolute inset-y-0 left-0 z-[5] w-1/3 max-w-40 cursor-w-resize bg-transparent"
+          className="absolute inset-y-0 left-0 z-[5] hidden w-12 cursor-w-resize bg-transparent sm:block"
           onClick={() => go(-1)}
+          disabled={safeIndex === 0}
         />
         <button
           type="button"
           aria-label="Next slide"
-          className="absolute inset-y-0 right-0 z-[5] w-1/3 max-w-40 cursor-e-resize bg-transparent"
+          className="absolute inset-y-0 right-0 z-[5] hidden w-12 cursor-e-resize bg-transparent sm:block"
           onClick={() => go(1)}
+          disabled={safeIndex >= slides.length - 1}
         />
 
-        <div className="relative z-10">
+        <div className="relative z-10 min-h-full">
           <AnimatePresence mode="wait">
             <div key={current.id}>{current.render()}</div>
           </AnimatePresence>
         </div>
       </div>
 
-      <div className="relative z-20 mx-auto flex max-w-5xl items-center justify-between px-5 pb-8 sm:px-8">
+      <nav
+        aria-label="Slide navigation"
+        className="relative z-20 mx-auto flex w-full max-w-5xl shrink-0 items-center justify-between gap-3 border-t border-ink/20 bg-paper px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-8 sm:py-4"
+      >
         <button
           type="button"
-          className="inline-flex items-center gap-1 font-display text-sm text-ink disabled:opacity-30"
+          className={navButtonClass}
           onClick={() => go(-1)}
           disabled={safeIndex === 0}
         >
-          <ChevronLeft className="size-4" aria-hidden="true" /> Prev
+          ← Prev
         </button>
-        <p className="font-display text-xs tracking-[0.08em] text-body">
+        <p className="font-mono text-xs tracking-[0.08em] text-body sm:text-sm">
           {safeIndex + 1} / {slides.length}
         </p>
         <button
           type="button"
-          className="inline-flex items-center gap-1 font-display text-sm text-ink disabled:opacity-30"
+          className={navButtonClass}
           onClick={() => go(1)}
           disabled={safeIndex >= slides.length - 1}
         >
-          Next <ChevronRight className="size-4" aria-hidden="true" />
+          Next →
         </button>
-      </div>
+      </nav>
     </main>
   );
 }

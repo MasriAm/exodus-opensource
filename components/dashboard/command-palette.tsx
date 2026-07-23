@@ -27,10 +27,10 @@ type CommandPaletteProps = {
 
 const SECTIONS: Array<{ id: DeskSection; label: string }> = [
   { id: "desk", label: "Reading desk" },
-  { id: "people", label: "People" },
   { id: "messages", label: "Messages" },
+  { id: "people", label: "People" },
   { id: "media", label: "Media" },
-  { id: "activity", label: "Activity calendar" },
+  { id: "activity", label: "Calendar" },
   { id: "search", label: "Search" },
   { id: "footprint", label: "Footprint" },
   { id: "export", label: "Export" },
