@@ -1,8 +1,28 @@
 "use client";
 
-import { DashboardClient } from "@/components/dashboard/dashboard-client";
-import { SessionGate } from "@/components/session-gate";
+import dynamic from "next/dynamic";
+
 import { useArchiveSession } from "@/components/archive-session";
+import { SessionGate } from "@/components/session-gate";
+import { StatePanel } from "@/components/state-panel";
+
+const DashboardClient = dynamic(
+  () =>
+    import("@/components/dashboard/dashboard-client").then(
+      (mod) => mod.DashboardClient,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <StatePanel
+        kind="loading"
+        title="Opening your reading desk"
+        description="Loading the archive terminal."
+        className="m-6"
+      />
+    ),
+  },
+);
 
 export default function DashboardPage() {
   const { api } = useArchiveSession();

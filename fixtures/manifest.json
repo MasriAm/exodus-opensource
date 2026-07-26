@@ -72,21 +72,21 @@
     },
     "analytics": {
       "dateRange": {
-        "firstSentAtMs": 1672542758000,
-        "lastSentAtMs": 1735657290000,
+        "firstSentAtMs": 1672542184000,
+        "lastSentAtMs": 1735579475000,
         "firstDate": "2023-01-01",
-        "lastDate": "2024-12-31"
+        "lastDate": "2024-12-30"
       },
       "firstMessage": {
         "conversation": "omar_khalil",
         "sender": "عمر",
-        "sentAtMs": 1672542758000,
-        "text": "الساعة الثالثة وما زلنا نتحدث عن الذكريات"
+        "sentAtMs": 1672542184000,
+        "text": "No cloud, no tracking, just our story."
       },
       "firstImageSent": {
         "zipPath": "your_instagram_activity/messages/inbox/omar_khalil/photos/photo_0001.jpg",
         "conversation": "omar_khalil",
-        "takenAtMs": 1672542758000
+        "takenAtMs": 1672543855000
       },
       "longestMutualFollows": [
         {
@@ -176,37 +176,37 @@
         375,
         61,
         0,
+        45,
+        56,
+        38,
+        70,
+        43,
+        59,
         46,
-        50,
+        68,
+        51,
+        51,
         56,
         52,
-        51,
-        51,
-        64,
-        44,
-        45,
-        50,
         57,
-        58,
-        65,
+        60,
+        50,
+        71,
         54,
-        68,
-        61,
-        51,
-        54
+        50
       ],
       "lateNightMessages0200To0459": 523,
       "twoToFourAmMessages": 462,
       "threeAmMessages": 375,
-      "activeDayCount": 731,
+      "activeDayCount": 459,
       "busiestDay": {
-        "date": "2023-01-01",
-        "messages": 3
+        "date": "2023-01-18",
+        "messages": 126
       },
       "longestDailyActivityStreak": {
-        "days": 731,
-        "startDate": "2023-01-01",
-        "endDate": "2024-12-31"
+        "days": 74,
+        "startDate": "2023-08-02",
+        "endDate": "2023-10-14"
       },
       "topConversations": [
         {
@@ -223,13 +223,13 @@
         }
       ],
       "selectedTermMessageHits": {
-        "reclaim": 180,
-        "ذكريات": 267,
+        "reclaim": 199,
+        "ذكريات": 244,
         "photo": 187
       },
       "selectedTermOccurrences": {
-        "reclaim": 180,
-        "ذكريات": 267,
+        "reclaim": 199,
+        "ذكريات": 244,
         "photo": 187
       }
     }

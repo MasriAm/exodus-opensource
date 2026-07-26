@@ -11,7 +11,7 @@ const EXPORT_TABLES: readonly ExportTable[] = [
   "media",
   "events",
 ];
-const EXPORT_FORMATS: readonly ExportFormat[] = ["csv", "json"];
+const EXPORT_FORMATS: readonly ExportFormat[] = ["xlsx", "csv", "json"];
 const MEDIA_KINDS: readonly MediaKind[] = [
   "image",
   "video",

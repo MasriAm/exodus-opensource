@@ -1,79 +1,88 @@
-# Exodus
+[![100% Local](https://img.shields.io/badge/Privacy-100%25_Local-028090?style=for-the-badge)](https://github.com/MasriAm/exodus-opensource)
+[![Open Source](https://img.shields.io/badge/Open_Source-Yes-5F4B66?style=for-the-badge)](https://github.com/MasriAm/exodus-opensource)
+[![Hackathon](https://img.shields.io/badge/Reclaim-Hackathon-2C1320?style=for-the-badge)](https://github.com/MasriAm/exodus-opensource)
 
-Exodus is a local-first, zero-knowledge explorer for Instagram and WhatsApp data
-exports. Drop in a ZIP to search messages, browse media, inspect activity, build
-a private Wrapped recap, and export normalized tables. The archive never leaves
-the device.
+---
 
-## Interface
+## `ABOUT THE PROJECT`
 
-![Exodus private import screen](docs/landing.png)
+Instagram and WhatsApp data exports are sterile, overwhelming, and usually sit gathering digital dust. **Exodus** turns those gigabytes of raw JSON and chat exports into a personal time capsule.
 
-![Bilingual message dashboard](docs/dashboard.png)
+It is a Spotify Wrapped–style experience plus a full reading desk for your archive. Everything runs entirely in your browser to unearth forgotten relationships, past digital identities, and slightly embarrassing digital footprints.
 
-![Private Wrapped recap](docs/wrapped.png)
+No servers. No data harvesting. Just you and your history.
 
-The screenshots use the deterministic synthetic fixture; they contain no real
-account data.
+---
 
-## Run it
+## `THE FEATURES`
 
-```sh
+Instead of sterile charts and corporate graphs, your data is presented as a continuous, interactive diary entry.
+
+* **`>> THE REAL ONES`**
+  * *The Library Checkout Card.* Before the algorithm, there was chronological order. This ledger extracts your longest-standing mutuals and calculates exactly how many years you've been connected.
+* **`>> THE CHAT ERAS`**
+  * *The Receipt.* A printed receipt detailing your peak texting eras. It scans your top conversations to reveal your longest phone calls, total message counts, and your most overused words.
+* **`>> THE IDENTITY CRISIS`**
+  * *The Stack.* You've changed your bio and username more times than you think. This interactive card stack lets you flip through your past digital identities.
+* **`>> THE CRINGE`**
+  * *The Redacted File.* A slot machine of nostalgia. We pull public comments from your export so you can laugh at exactly who you used to be.
+* **`>> THE ARTIFACT`**
+  * *The Polaroid.* We dig to the very bottom of your history to uncover and apply a 1970s analog film wash to early images from your DMs.
+* **`>> THE INTERESTS`**
+  * *The Algorithm.* While you were scrolling, the machine was taking notes. An interactive timeline that reveals how Meta's algorithmic view of your interests shifted year by year.
+* **`>> THE READING DESK`**
+  * After Wrapped, browse messages, people, media, calendar heatmaps, search, footprint, and local spreadsheet/JSON export — still fully offline.
+
+---
+
+## `SECURITY CLEARANCE: PRIVACY FIRST`
+
+> **"If it's nostalgic, it's probably deeply personal."**
+
+Instagram and WhatsApp exports contain DMs, search histories, and private photos. Because of this, the architecture is strictly client-side.
+
+1. You drop your `.zip` file into the browser.
+2. A Web Worker reads the archive on demand with `@zip.js/zip.js`, parses only what is needed, and loads rows into DuckDB-Wasm in memory.
+3. **Everything is processed locally.** Your memories never leave your machine. There are no API routes and no uploads.
+
+---
+
+## `THE MAGIC`
+
+Parsing large exports in a browser without crashing the tab is the hard part. While the data processes, users are greeted by the loading scenes:
+
+* *Dusting off your old DMs...*
+* *Finding out who your real friends are...*
+* *Locating your most embarrassing comments...*
+
+---
+
+## `INITIATING SEQUENCE (RUN LOCALLY)`
+
+Want to uncover your own history?
+
+1. **Get your data:** Open Instagram → Settings → Your activity → Download your information (or Meta Accounts Center → Export your information). Select **JSON** format, not HTML. Choose a date range (use **All time** for the fullest archive). WhatsApp chat exports are also supported.
+2. **Clone the archive:**
+
+```bash
+git clone https://github.com/MasriAm/exodus-opensource.git
+cd exodus-opensource
+```
+
+3. **Install and run:**
+
+```bash
 npm install
 npm run fixtures
 npm run dev
 ```
 
-Open `http://localhost:3000`, then drop an export or choose **Try synthetic
-export**. The fixture command regenerates deterministic, bilingual demo archives
-without using private data.
+Open `http://localhost:3000`, then drop your export or try the synthetic demo archive.
 
-Other useful scripts: `npm run typecheck`, `npm test`, `npm run build`,
-`npm run preview` (static export with CSP headers), `npm run test:browser`
-(optional Chromium smoke against the preview server).
+Other useful scripts: `npm run typecheck`, `npm test`, `npm run build`, `npm run preview`.
 
-For a production build:
+---
 
-```sh
-npm run typecheck
-npm run test
-npm run build
-```
-
-The static site is written to `out/`; it has no server component. Run
-`npm run preview` to serve that finalized export locally.
-
-## What is supported
-
-- Instagram JSON exports: paginated inbox threads, photos, follower/following
-  activity, and Instagram's common Arabic mojibake encoding.
-- WhatsApp exports: iOS and Android timestamps, multiline messages, system
-  events, omitted media markers, and RTL control marks.
-- Local search, lazy media decoding, activity charts, Wrapped analytics, and
-  UTF-8 CSV/JSON exports.
-- An installable app shell that caches same-origin assets for offline return
-  visits.
-
-## Privacy architecture
-
-The page hands the selected `File` to one Comlink-exposed ingest worker.
-`@zip.js/zip.js` reads entries on demand there, parser plugins emit zod-validated
-normalized rows, and DuckDB-Wasm stores and queries those rows. UI components
-can call named queries only; they never parse an archive or contain SQL.
-
-Media files are decompressed lazily when gallery cards approach the viewport.
-Their blob URLs are revoked when cards unmount. The Content Security Policy
-keeps `connect-src` restricted to the app's own origin, and all WebAssembly,
-workers, icons, and demo data are self-hosted.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the three-step parser guide.
-
-## Private samples
-
-Never place a real export in fixtures or documentation. `samples/` is ignored
-for local compatibility testing; convert any discovered edge case into a small
-synthetic fixture before sharing it.
-
-## License
+## `LICENSE`
 
 MIT

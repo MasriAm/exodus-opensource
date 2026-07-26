@@ -1,11 +1,10 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, X } from "lucide-react";
 
 import { Mark } from "@/components/capsule/mark";
 import { PressButton } from "@/components/capsule/press-button";
-import { TapedNote } from "@/components/capsule/taped-note";
 import { cn } from "@/lib/utils";
 
 type ArchiveDropzoneProps = {
@@ -107,8 +106,7 @@ export function ArchiveDropzone({
           <button
             type="button"
             className="text-left font-display text-xs tracking-[0.02em] text-ink underline underline-offset-4"
-            onClick={() => setGuideOpen((open) => !open)}
-            aria-expanded={guideOpen}
+            onClick={() => setGuideOpen(true)}
           >
             Don&apos;t have your data yet? Read the 3-step guide
           </button>
@@ -116,40 +114,71 @@ export function ArchiveDropzone({
       ) : null}
 
       {guideOpen && !busy ? (
-        <TapedNote className="mt-6">
-          <ol className="space-y-4 font-body text-sm leading-6 text-body">
-            <li>
-              <span className="font-display text-xs font-bold text-ink">
-                STEP 1
-              </span>
-              <p className="mt-1">
-                Open the Instagram app → Settings → Accounts Center → Your
-                information and permissions → Download your information
-              </p>
-            </li>
-            <li>
-              <span className="font-display text-xs font-bold text-ink">
-                STEP 2
-              </span>
-              <p className="mt-1">
-                Request a download. You must select <Mark>JSON</Mark> format,
-                not HTML. &quot;All time&quot; range.
-              </p>
-            </li>
-            <li>
-              <span className="font-display text-xs font-bold text-ink">
-                STEP 3
-              </span>
-              <p className="mt-1">
-                Check your email — Instagram sends a link to your .zip when
-                it&apos;s ready.
-              </p>
-            </li>
-          </ol>
-          <p className="mt-5 border-t border-ink/20 pt-3 font-display text-xs tracking-[0.02em] text-ink">
-            Bookmark this page and come back when you have your data.
-          </p>
-        </TapedNote>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/35 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="export-guide-title"
+          onClick={() => setGuideOpen(false)}
+        >
+          <div
+            className="relative max-h-[min(85dvh,32rem)] w-full max-w-md overflow-y-auto border-strong bg-receipt p-5 shadow-press sm:p-6"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <h2
+                id="export-guide-title"
+                className="font-display text-sm font-bold tracking-[0.04em] text-ink"
+              >
+                Get your export in 3 steps
+              </h2>
+              <button
+                type="button"
+                aria-label="Close guide"
+                className="border border-ink/30 p-1.5 text-ink hover:bg-cream"
+                onClick={() => setGuideOpen(false)}
+              >
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            </div>
+            <ol className="mt-5 space-y-4 font-body text-[15px] font-medium leading-6 text-ink">
+              <li>
+                <span className="font-display text-xs font-bold text-teal">
+                  STEP 1
+                </span>
+                <p className="mt-1">
+                  Instagram app → Settings → Accounts Center → Your information
+                  and permissions → Download your information
+                </p>
+              </li>
+              <li>
+                <span className="font-display text-xs font-bold text-teal">
+                  STEP 2
+                </span>
+                <p className="mt-1">
+                  Request a download. Choose <Mark>JSON</Mark>, not HTML. Range:
+                  All time.
+                </p>
+              </li>
+              <li>
+                <span className="font-display text-xs font-bold text-teal">
+                  STEP 3
+                </span>
+                <p className="mt-1">
+                  Check email for Instagram&apos;s download link, then drop the
+                  .zip here.
+                </p>
+              </li>
+            </ol>
+            <button
+              type="button"
+              className="mt-6 w-full border-strong bg-cream py-2.5 font-display text-sm font-bold shadow-press"
+              onClick={() => setGuideOpen(false)}
+            >
+              Got it
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {validationError || error ? (

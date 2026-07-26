@@ -5,6 +5,8 @@ import { Search } from "lucide-react";
 
 import { PhotoThumb } from "@/components/capsule/photo-thumb";
 import { PressButton } from "@/components/capsule/press-button";
+import { ArchivePanel, StatCard } from "@/components/dashboard/archive-panel";
+import { UserText } from "@/components/user-text";
 import { formatDate, formatNumber } from "@/lib/format";
 import type { DeskHomeResult, MessageItem } from "@/lib/db/types";
 
@@ -22,23 +24,6 @@ type DeskHomeProps = {
   surpriseEmpty?: boolean;
 };
 
-function SectionHeader({
-  children,
-  action,
-}: {
-  children: React.ReactNode;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <h2 className="font-display text-[17px] font-bold text-ink">
-        {">>"} {children}
-      </h2>
-      {action}
-    </div>
-  );
-}
-
 function GhostLink({
   children,
   onClick,
@@ -50,7 +35,7 @@ function GhostLink({
     <button
       type="button"
       onClick={onClick}
-      className="font-display text-xs tracking-[0.02em] text-body hover:text-teal hover:underline hover:underline-offset-4"
+      className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-teal transition-colors hover:text-ink hover:underline hover:underline-offset-4"
     >
       {children}
     </button>
@@ -83,48 +68,37 @@ export function DeskHome({
       ? fromYear === toYear
         ? String(fromYear)
         : `${fromYear}–${toYear}`
-      : null;
+      : "—";
 
   const monthName = new Date(
     Date.UTC(2000, data.onThisDayMonth - 1, 1),
   ).toLocaleString("en", { month: "long", timeZone: "UTC" });
 
-  const stats: Array<{ value: string; label: string }> = [
-    { value: formatNumber(data.messages), label: "messages" },
-    ...(data.media > 0
-      ? [{ value: formatNumber(data.media), label: "photographs" }]
-      : []),
-    { value: formatNumber(data.conversations), label: "threads" },
-    ...(yearsLabel ? [{ value: yearsLabel, label: "years" }] : []),
-  ];
+  const featured = data.onThisDayMessages[0] ?? null;
+  const contactSheet = data.sampleMedia.slice(0, 5);
 
   return (
-    <div className="space-y-12">
-      {/* Stat strip — one quiet line, hairline separators, no boxes */}
-      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 border-b border-ink/20 pb-4">
-        {stats.map((stat, index) => (
-          <p key={stat.label} className="flex items-baseline gap-2">
-            {index > 0 ? (
-              <span aria-hidden="true" className="me-4 text-ink/20">
-                ·
-              </span>
-            ) : null}
-            <span className="font-display text-[17px] font-bold text-ink">
-              {stat.value}
-            </span>
-            <span className="meta-caps text-[11px] text-body">{stat.label}</span>
-          </p>
-        ))}
+    <div className="space-y-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Messages" value={formatNumber(data.messages)} />
+        <StatCard
+          label="Photographs"
+          value={formatNumber(data.media)}
+        />
+        <StatCard
+          label="Threads"
+          value={formatNumber(data.conversations)}
+        />
+        <StatCard label="Years spanned" value={yearsLabel} />
       </div>
 
-      {/* The one search */}
-      <label className="flex items-center gap-3 border-b border-ink/20 pb-3">
-        <Search aria-hidden="true" className="size-4 shrink-0 text-body" />
+      <label className="archive-panel flex items-center gap-3 px-4 py-3 sm:px-5">
+        <Search aria-hidden="true" className="size-4 shrink-0 text-ink/60" />
         <input
           ref={searchRef}
           dir="auto"
-          placeholder="Search the archive — Ctrl+K"
-          className="min-w-0 flex-1 bg-transparent font-display text-[15px] text-ink outline-none placeholder:text-body/70"
+          placeholder="Search the archive…"
+          className="min-w-0 flex-1 bg-transparent font-body text-[15px] font-medium text-ink outline-none placeholder:text-ink/50"
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               const value = event.currentTarget.value.trim();
@@ -136,163 +110,187 @@ export function DeskHome({
         />
       </label>
 
-      {/* On this day — compact rows */}
-      {data.onThisDayMessages.length > 0 ? (
-        <section>
-          <SectionHeader
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        {featured ? (
+          <ArchivePanel
+            title={`On this day (${new Date().getUTCFullYear()})`}
+            subtitle={`${monthName} ${data.onThisDayDay} · ${formatNumber(data.onThisDayMessageCount)} messages across the years`}
             action={<GhostLink onClick={onOpenActivity}>See all →</GhostLink>}
           >
-            On this day
-          </SectionHeader>
-          <p className="mt-1 meta-caps text-[11px] text-body">
-            {monthName} {data.onThisDayDay} ·{" "}
-            {formatNumber(data.onThisDayMessageCount)} messages across the years
-          </p>
-          <div className="mt-4">
-            {data.onThisDayMessages.map((message) => (
+            <blockquote
+              dir="auto"
+              className="font-body text-xl font-medium leading-8 text-ink sm:text-2xl"
+            >
+              “{featured.text ?? "Media attachment"}”
+            </blockquote>
+            <p className="mt-4 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/70">
+              Sent to:{" "}
               <button
-                key={message.rowId}
                 type="button"
-                onClick={() => onOpenPerson(message.conversation)}
-                className="flex h-12 w-full items-center gap-4 border-b border-ink/20 text-start transition-colors duration-150 hover:bg-teal-wash"
+                dir="auto"
+                className="text-teal transition-colors hover:text-ink hover:underline"
+                onClick={() => onOpenPerson(featured.conversation)}
               >
-                <span
-                  dir="auto"
-                  className="w-32 shrink-0 truncate font-display text-xs text-teal sm:w-40"
-                >
-                  {message.conversation}
-                </span>
-                <span
-                  dir="auto"
-                  className="min-w-0 flex-1 truncate font-body text-[15px] text-ink"
-                >
-                  {message.text}
-                </span>
-                <span className="meta-caps hidden shrink-0 text-[11px] text-body sm:inline">
-                  {formatDate(message.sentAtMs)}
-                </span>
+                @{featured.conversation}
               </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {/* Contact sheet — plain framed thumbnails, no filters at this size */}
-      {data.sampleMedia.length > 0 ? (
-        <section>
-          <SectionHeader
-            action={<GhostLink onClick={onOpenMedia}>Open media →</GhostLink>}
+              {" · "}
+              {formatDate(featured.sentAtMs)}
+            </p>
+            {data.onThisDayMessages.length > 1 ? (
+              <ul className="mt-5 space-y-0 border-t border-ink/20 pt-3">
+                {data.onThisDayMessages.slice(1).map((message) => (
+                  <li key={message.rowId}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenPerson(message.conversation)}
+                      className="interactive-row flex w-full items-baseline justify-between gap-3 border-b border-ink/15 py-2.5 text-start last:border-b-0"
+                    >
+                      <span
+                        dir="auto"
+                        className="min-w-0 truncate font-body text-[15px] text-ink"
+                      >
+                        {message.text ?? "Media attachment"}
+                      </span>
+                      <UserText className="shrink-0 font-body text-[10px] font-medium text-ink/65">
+                        {message.conversation}
+                      </UserText>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </ArchivePanel>
+        ) : (
+          <ArchivePanel
+            title="On this day"
+            subtitle="Nothing landed on this calendar date in the years you wrote."
           >
-            Contact sheet
-          </SectionHeader>
-          <p className="mt-1 font-body text-[15px] text-body">
-            A quick strip of photographs from the archive — open Media for the
-            full set.
-          </p>
-          <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-6">
-            {data.sampleMedia.map((item) => (
-              <PhotoThumb
-                key={item.rowId}
-                zipPath={item.zipPath}
-                readBlob={readBlob}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
+            <p className="font-body text-[15px] text-ink/75">
+              Open the calendar to wander other days.
+            </p>
+          </ArchivePanel>
+        )}
 
-      {/* Frequent correspondents — ledger rows */}
-      {data.topPeople.length > 0 ? (
-        <section>
-          <SectionHeader
-            action={<GhostLink onClick={onOpenPeople}>Full index →</GhostLink>}
-          >
-            Frequent correspondents
-          </SectionHeader>
-          <p className="mt-1 font-body text-[15px] text-body">
-            The people you wrote to most — click a name to open their file.
-          </p>
-          <div className="mt-4">
-            {data.topPeople.map((person) => (
-              <button
-                key={`${person.platform}:${person.conversation}`}
-                type="button"
-                onClick={() => onOpenPerson(person.conversation)}
-                className="flex h-12 w-full items-center justify-between gap-4 border-b border-ink/20 text-start transition-colors duration-150 hover:bg-teal-wash"
-              >
-                <span dir="auto" className="min-w-0 truncate font-display text-xs text-ink">
-                  {person.conversation}
-                </span>
-                <span className="font-display text-xs text-body">
-                  {formatNumber(person.messageCount)}
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {/* Orientation + the screen's single raised element */}
-      <section className="space-y-4" id="surprise-memory">
-        <p className="font-body text-[15px] font-medium text-ink/85">
-          Pull one random message or photo onto the desk — press again for
-          another.
-        </p>
-        <PressButton
-          type="button"
-          onClick={onSurprise}
-          disabled={surpriseLoading}
+        <ArchivePanel
+          title="The cringe"
+          subtitle="A random memory from the archive — press again for another."
         >
-          {surpriseLoading
-            ? "Finding a memory…"
-            : "Show me a random memory"}
-        </PressButton>
-        {surpriseEmpty && !surprise && !surpriseLoading ? (
-          <p className="font-body text-[15px] font-medium text-ink/75" role="status">
-            No memory matched the current filters — try again or clear filters.
-          </p>
-        ) : null}
-        {surprise ? (
-          <figure className="border border-ink/25 bg-cream/60 px-4 py-4">
-            <figcaption className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/75">
-              Random memory ·{" "}
-              <button
-                type="button"
-                dir="auto"
-                className="text-teal hover:underline"
-                onClick={() => onOpenPerson(surprise.conversation)}
-              >
-                {surprise.conversation}
-              </button>{" "}
-              · {formatDate(surprise.sentAtMs)} · {surprise.sender}
-            </figcaption>
-            {surprise.text ? (
-              <blockquote
-                dir="auto"
-                className="mt-3 font-body text-[16px] font-medium leading-7 text-ink"
-              >
-                “{surprise.text}”
-              </blockquote>
-            ) : null}
-            {surprise.mediaRef ? (
-              <div className="mt-3 max-w-[12rem]">
-                <PhotoThumb
-                  zipPath={surprise.mediaRef}
-                  readBlob={readBlob}
-                />
-              </div>
-            ) : null}
-            <button
+          <div id="surprise-memory" className="space-y-4">
+            <PressButton
               type="button"
-              className="mt-3 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-teal hover:underline"
               onClick={onSurprise}
               disabled={surpriseLoading}
+              className="w-full sm:w-auto"
             >
-              Another memory
-            </button>
-          </figure>
-        ) : null}
-      </section>
+              {surpriseLoading
+                ? "Finding a memory…"
+                : "Show me a random memory"}
+            </PressButton>
+            {surpriseEmpty && !surprise && !surpriseLoading ? (
+              <p
+                className="font-body text-[15px] font-medium text-ink/75"
+                role="status"
+              >
+                No memory matched — try again.
+              </p>
+            ) : null}
+            {surprise ? (
+              <figure>
+                <blockquote
+                  dir="auto"
+                  className="font-body text-xl font-medium leading-8 text-ink"
+                >
+                  “{surprise.text ?? "Media attachment"}”
+                </blockquote>
+                <figcaption className="mt-3 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/70">
+                  <button
+                    type="button"
+                    dir="auto"
+                    className="text-teal transition-colors hover:text-ink hover:underline"
+                    onClick={() => onOpenPerson(surprise.conversation)}
+                  >
+                    @{surprise.conversation}
+                  </button>
+                  {" · "}
+                  {formatDate(surprise.sentAtMs)}
+                </figcaption>
+                {surprise.mediaRef ? (
+                  <div className="mt-3 max-w-[10rem]">
+                    <PhotoThumb
+                      zipPath={surprise.mediaRef}
+                      readBlob={readBlob}
+                    />
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  className="mt-3 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-teal transition-colors hover:text-ink hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={onSurprise}
+                  disabled={surpriseLoading}
+                >
+                  Another memory
+                </button>
+              </figure>
+            ) : null}
+          </div>
+        </ArchivePanel>
+      </div>
+
+      {contactSheet.length > 0 ? (
+        <ArchivePanel
+          title="Archived media (recent)"
+          subtitle="A quick strip of photographs from the archive — open Media for the full set."
+          action={<GhostLink onClick={onOpenMedia}>View all →</GhostLink>}
+        >
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+            {contactSheet.map((item) => (
+              <button
+                key={item.rowId}
+                type="button"
+                onClick={onOpenMedia}
+                className="text-start transition-transform hover:-translate-y-0.5"
+              >
+                <PhotoThumb zipPath={item.zipPath} readBlob={readBlob} />
+                {item.takenAtMs !== null ? (
+                  <p className="mt-1.5 font-display text-[10px] font-bold uppercase tracking-[0.06em] text-ink/70">
+                    {formatDate(item.takenAtMs)}
+                  </p>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        </ArchivePanel>
+      ) : null}
+
+      {data.topPeople.length > 0 ? (
+        <ArchivePanel
+          title="Frequent correspondents"
+          subtitle="The people you wrote to most — click a name to open their file."
+          action={<GhostLink onClick={onOpenPeople}>Full index →</GhostLink>}
+        >
+          <ul>
+            {data.topPeople.map((person) => (
+              <li key={`${person.platform}:${person.conversation}`}>
+                <button
+                  type="button"
+                  onClick={() => onOpenPerson(person.conversation)}
+                  className="interactive-row flex h-12 w-full items-center justify-between gap-4 border-b border-ink/20 text-start last:border-b-0"
+                >
+                  <span
+                    dir="auto"
+                    className="min-w-0 truncate font-body text-[15px] font-medium text-ink"
+                  >
+                    {person.conversation}
+                  </span>
+                  <span className="shrink-0 font-display text-xs font-bold text-ink/70">
+                    {formatNumber(person.messageCount)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </ArchivePanel>
+      ) : null}
     </div>
   );
 }

@@ -3,7 +3,10 @@ import * as Comlink from "comlink";
 import {
   COUNTS_TIMEOUT_MS,
   DESK_QUERY_TIMEOUT_MS,
+  EXPORT_TIMEOUT_MS,
+  HEAVY_QUERY_TIMEOUT_MS,
   INGEST_TIMEOUT_MS,
+  PING_TIMEOUT_MS,
   VIEW_QUERY_TIMEOUT_MS,
   withTimeout,
 } from "./query-timeout";
@@ -30,6 +33,7 @@ import type {
   SearchResult,
   WrappedStatsResult,
 } from "./db/types";
+import { thumbCacheClear } from "./thumb-cache";
 
 export interface WorkerClient extends IngestApi {
   conversationList(
@@ -54,6 +58,12 @@ type ExodusGlobal = typeof globalThis & {
   __exodusArchiveLive?: boolean;
 };
 
+const HEAVY_QUERIES = new Set<QueryName>([
+  "wrappedStats",
+  "personDetail",
+  "footprint",
+]);
+
 export function createWorkerClient(): WorkerClient {
   const worker = new Worker(
     new URL("../workers/ingest.worker.ts", import.meta.url),
@@ -73,9 +83,12 @@ export function createWorkerClient(): WorkerClient {
     ...args: QueryArgs<Name>
   ): Promise<QueryResultByName[Name]> => {
     ensureActive();
+    const timeoutMs = HEAVY_QUERIES.has(name)
+      ? HEAVY_QUERY_TIMEOUT_MS
+      : DESK_QUERY_TIMEOUT_MS;
     return withTimeout(
       remote.query(name, ...args) as Promise<QueryResultByName[Name]>,
-      DESK_QUERY_TIMEOUT_MS,
+      timeoutMs,
       `query:${String(name)}`,
     );
   };
@@ -86,6 +99,7 @@ export function createWorkerClient(): WorkerClient {
       onProgress: IngestProgressCallback,
     ): Promise<IngestSummary> {
       ensureActive();
+      thumbCacheClear();
       return withTimeout(
         remote.ingest(file, Comlink.proxy(onProgress)),
         INGEST_TIMEOUT_MS,
@@ -117,9 +131,13 @@ export function createWorkerClient(): WorkerClient {
       ensureActive();
       return withTimeout(
         remote.exportTable(table, format),
-        DESK_QUERY_TIMEOUT_MS,
+        EXPORT_TIMEOUT_MS,
         `exportTable:${table}`,
       );
+    },
+    ping(): Promise<true> {
+      ensureActive();
+      return withTimeout(remote.ping(), PING_TIMEOUT_MS, "ping");
     },
     markArchiveLive(): void {
       (globalThis as ExodusGlobal).__exodusArchiveLive = true;
@@ -133,6 +151,7 @@ export function createWorkerClient(): WorkerClient {
       }
       disposed = true;
       (globalThis as ExodusGlobal).__exodusArchiveLive = false;
+      thumbCacheClear();
       try {
         remote[Comlink.releaseProxy]();
       } catch {

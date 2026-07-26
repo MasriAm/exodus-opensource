@@ -1,8 +1,26 @@
 "use client";
 
-import { SessionGate } from "@/components/session-gate";
-import { WrappedClient } from "@/components/wrapped-client";
+import dynamic from "next/dynamic";
+
 import { useArchiveSession } from "@/components/archive-session";
+import { SessionGate } from "@/components/session-gate";
+import { StatePanel } from "@/components/state-panel";
+
+const WrappedClient = dynamic(
+  () =>
+    import("@/components/wrapped-client").then((mod) => mod.WrappedClient),
+  {
+    ssr: false,
+    loading: () => (
+      <StatePanel
+        kind="loading"
+        title="Opening your time capsule"
+        description="Loading the Wrapped deck."
+        className="m-6"
+      />
+    ),
+  },
+);
 
 export default function WrappedPage() {
   const { api } = useArchiveSession();

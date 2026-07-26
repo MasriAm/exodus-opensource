@@ -52,29 +52,73 @@ export function hasInstagramMarker(paths: readonly string[]): boolean {
   });
 }
 
+function decodePathCandidate(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Map an Instagram/WhatsApp media URI onto a real ZIP entry.
+ * Archives often nest under a root folder, so suffix / basename matching matters.
+ */
 export function resolveReferencedPath(
   entryPaths: readonly string[],
   referencedPath: string,
 ): string {
-  const normalizedReference = normalizeEntryPath(referencedPath);
-  const lowerReference = normalizedReference.toLowerCase();
+  const candidates = [
+    normalizeEntryPath(referencedPath),
+    normalizeEntryPath(decodePathCandidate(referencedPath)),
+  ].filter((value, index, list) => value.length > 0 && list.indexOf(value) === index);
 
-  const exact = entryPaths.find(
-    (path) => normalizeEntryPath(path) === normalizedReference,
-  );
-  if (exact !== undefined) {
-    return normalizeEntryPath(exact);
+  for (const normalizedReference of candidates) {
+    const lowerReference = normalizedReference.toLowerCase();
+    const exact = entryPaths.find(
+      (path) => normalizeEntryPath(path).toLowerCase() === lowerReference,
+    );
+    if (exact !== undefined) {
+      return normalizeEntryPath(exact);
+    }
+
+    const suffixMatches = entryPaths.filter((path) => {
+      const normalizedPath = normalizeEntryPath(path).toLowerCase();
+      return (
+        normalizedPath === lowerReference ||
+        normalizedPath.endsWith(`/${lowerReference}`)
+      );
+    });
+    if (suffixMatches.length === 1) {
+      return normalizeEntryPath(suffixMatches[0]);
+    }
+    if (suffixMatches.length > 1) {
+      const preferred =
+        suffixMatches.find((path) =>
+          path.toLowerCase().includes("your_instagram_activity"),
+        ) ??
+        suffixMatches.find((path) => path.toLowerCase().includes("/messages/")) ??
+        suffixMatches[0];
+      return normalizeEntryPath(preferred);
+    }
+
+    const base = entryBasename(normalizedReference).toLowerCase();
+    if (base.length > 0) {
+      const baseMatches = entryPaths.filter(
+        (path) => entryBasename(path).toLowerCase() === base,
+      );
+      if (baseMatches.length === 1) {
+        return normalizeEntryPath(baseMatches[0]);
+      }
+      if (baseMatches.length > 1) {
+        const preferred =
+          baseMatches.find((path) =>
+            path.toLowerCase().includes("your_instagram_activity"),
+          ) ?? baseMatches[0];
+        return normalizeEntryPath(preferred);
+      }
+    }
   }
 
-  const suffixMatches = entryPaths.filter((path) => {
-    const normalizedPath = normalizeEntryPath(path).toLowerCase();
-    return (
-      normalizedPath === lowerReference ||
-      normalizedPath.endsWith(`/${lowerReference}`)
-    );
-  });
-
-  return suffixMatches.length === 1
-    ? normalizeEntryPath(suffixMatches[0])
-    : normalizedReference;
+  return normalizeEntryPath(referencedPath);
 }

@@ -19,7 +19,7 @@ export default function GlobalError({
           minHeight: "100vh",
           fontFamily: "Georgia, 'Times New Roman', serif",
           background: "#EADBC3",
-          color: "#2B1B23",
+          color: "#241A15",
           display: "grid",
           placeItems: "center",
           padding: "2rem",

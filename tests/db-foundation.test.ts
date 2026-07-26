@@ -10,9 +10,9 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
-  createExportBlob,
   createJsonExportBlob,
-  getExportSql,
+  createSpreadsheetExportBlob,
+  getExportSelectSql,
 } from "../lib/db/export";
 import {
   createSearchSnippet,
@@ -392,8 +392,11 @@ describe("DuckDB named-query SQL", () => {
     expect(readNumber(longestCall, "duration_sec")).toBe(754);
 
     const cringe = queryRows(wrapped.cringeComments);
-    expect(cringe).toHaveLength(1);
+    expect(cringe.length).toBeGreaterThanOrEqual(1);
     expect(readString(cringe[0], "text")).toBe("cringe comment from then");
+    expect(cringe.map((row) => readString(row, "text"))).toContain(
+      "recent comment",
+    );
 
     const interests = queryRows(wrapped.interests);
     expect(interests.map((row) => readString(row, "topic")).sort()).toEqual([
@@ -411,26 +414,18 @@ describe("DuckDB named-query SQL", () => {
     expect(readString(firstImage, "conversation")).toBe("alpha");
   });
 
-  it("exports CSV with a BOM and JSON without an extension download", async () => {
-    const csvName = "export-904-messages.csv";
-    connection.query(getExportSql("messages", "csv", csvName));
-    database.flushFiles();
-    const csvBlob = createExportBlob(
-      database.copyFileToBuffer(csvName),
-      "csv",
-    );
-    database.dropFile(csvName);
+  it("exports a formatted spreadsheet and JSON from the same select", async () => {
+    const rows = queryRows(getExportSelectSql("messages"));
+    const spreadsheet = await createSpreadsheetExportBlob("messages", rows);
+    const bytes = new Uint8Array(await spreadsheet.arrayBuffer());
+    // ZIP / OOXML magic
+    expect([...bytes.slice(0, 2)]).toEqual([0x50, 0x4b]);
+    expect(spreadsheet.type).toContain("spreadsheetml");
 
-    const csvBytes = new Uint8Array(await csvBlob.arrayBuffer());
-    expect([...csvBytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
-    expect(new TextDecoder().decode(csvBytes)).toContain("مرحبا");
-
-    const jsonName = "export-905-messages.json";
-    const jsonBlob = createJsonExportBlob(
-      queryRows(getExportSql("messages", "json", jsonName)),
-    );
+    const jsonBlob = createJsonExportBlob(rows);
     const jsonText = await jsonBlob.text();
     expect(JSON.parse(jsonText)).toHaveLength(7);
+    expect(jsonText).toContain("مرحبا");
   });
 });
 
@@ -440,8 +435,9 @@ describe("database boundary helpers", () => {
     expect(isQueryName("rawSql")).toBe(false);
     expect(isExportTable("messages")).toBe(true);
     expect(isExportTable("users")).toBe(false);
+    expect(isExportFormat("xlsx")).toBe(true);
     expect(isExportFormat("csv")).toBe(true);
-    expect(isExportFormat("xlsx")).toBe(false);
+    expect(isExportFormat("tsv")).toBe(false);
   });
 
   it("escapes LIKE wildcards and creates bounded snippets", () => {

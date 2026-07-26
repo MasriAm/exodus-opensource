@@ -58,7 +58,9 @@
   --color-heat-4: var(--heat-4);
   --color-ink: var(--ink);
   --color-body: var(--body);
+  --color-rail: var(--rail);
   --color-teal: var(--teal);
+  --color-taupe: var(--taupe);
   --color-slate: var(--slate);
   --color-coral: var(--coral);
   --radius-sm: calc(var(--radius) * 0.6);
@@ -74,22 +76,26 @@
   --paper: #eadbc3;
   --cream: #f4edd9;
   --receipt: #fbf7ed;
-  --ink: #2b1b23;
-  --body: #342636;
-  --teal: #17808f;
-  --slate: #4e6172;
+  /* Warm ink for paper surfaces; cool rail for the desk sidebar */
+  --ink: #241a15;
+  --body: #3d2e26;
+  --rail: #1a2430;
+  /* Verdigris / aged copper — archive accent, not web blue */
+  --teal: #0e6b73;
+  --taupe: #a89078;
+  --slate: #5a4a3c;
   --coral: #ef5b33;
 
-  /* v3 quiet-density tokens */
-  --teal-wash: color-mix(in srgb, var(--teal) 10%, transparent);
+  /* Quiet-density tokens */
+  --teal-wash: color-mix(in srgb, var(--teal) 12%, transparent);
   --ink-06: color-mix(in srgb, var(--ink) 6%, transparent);
   --ink-20: color-mix(in srgb, var(--ink) 20%, transparent);
-  /* Sepia heatmap ramp: paper → ink, like ink density in a ledger */
+  /* Heatmap ramp: pale patina → deep verdigris (empty days stay paper) */
   --heat-0: var(--paper);
-  --heat-1: #dcc7a6;
-  --heat-2: #be9c72;
-  --heat-3: #8b5e3c;
-  --heat-4: #2b1b23;
+  --heat-1: #c8ddd8;
+  --heat-2: #7eada8;
+  --heat-3: #3d8682;
+  --heat-4: #0a4f55;
 
   --background: var(--paper);
   --foreground: var(--ink);
@@ -125,7 +131,8 @@
   --sidebar-ring: var(--teal);
 
   --border-strong: 2px solid var(--ink);
-  --shadow-press: 6px 6px 0 var(--ink);
+  --shadow-panel: 4px 4px 0 var(--ink);
+  --shadow-press: 8px 8px 0 var(--ink);
   --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
@@ -155,11 +162,31 @@
     font-family: var(--font-display);
     letter-spacing: 0.02em;
   }
+  button:not(:disabled),
+  a[href],
+  summary,
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]),
+  [role="option"],
+  select,
+  label[for],
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"] {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled="true"],
+  input:disabled,
+  select:disabled {
+    cursor: not-allowed;
+  }
   button,
   a,
   input,
   select,
   [role="button"],
+  [role="tab"],
   [tabindex]:not([tabindex="-1"]) {
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal focus-visible:ring-offset-2 focus-visible:ring-offset-paper;
   }
@@ -176,6 +203,47 @@
     pointer-events: none;
     opacity: 0.07;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  }
+
+  .sidebar-grain {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.09;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  }
+
+  .interactive-quiet {
+    border: 2px solid color-mix(in srgb, var(--ink) 45%, transparent);
+    background: var(--cream);
+    color: var(--ink);
+    box-shadow: 2px 2px 0 color-mix(in srgb, var(--ink) 35%, transparent);
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease,
+      color 150ms ease,
+      box-shadow 150ms ease,
+      transform 150ms ease;
+  }
+  .interactive-quiet:hover:not(:disabled) {
+    background: var(--receipt);
+    border-color: var(--ink);
+  }
+  .interactive-quiet:active:not(:disabled) {
+    transform: translate(1px, 1px);
+    box-shadow: 1px 1px 0 color-mix(in srgb, var(--ink) 35%, transparent);
+  }
+  .interactive-quiet:disabled {
+    opacity: 0.35;
+    box-shadow: none;
+  }
+
+  .interactive-row {
+    transition: background-color 150ms ease;
+  }
+  .interactive-row:hover {
+    background: var(--teal-wash);
   }
 
   .vintage-print-container {
@@ -243,6 +311,10 @@
     object-fit: cover;
   }
 
+  .shadow-panel {
+    box-shadow: var(--shadow-panel);
+  }
+
   .shadow-press {
     box-shadow: var(--shadow-press);
   }
@@ -251,13 +323,36 @@
     border: var(--border-strong);
   }
 
+  .archive-panel {
+    border: 2px solid var(--ink);
+    background: var(--cream);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .archive-stat-card {
+    border: 2px solid var(--ink);
+    background: var(--cream);
+    box-shadow: var(--shadow-panel);
+    padding: 0.85rem 1rem 1rem;
+  }
+
   .meta-caps {
     font-family: var(--font-display);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: color-mix(in srgb, var(--ink) 82%, transparent);
+    /* Readable on projectors — avoid faint ink washes on paper */
+    color: color-mix(in srgb, var(--ink) 88%, transparent);
+  }
+
+  .nav-serif-caps {
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: lowercase;
+    font-variant: small-caps;
   }
 }
 

@@ -1,6 +1,11 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
+import {
+  localUtcOffsetSeconds,
+  localWallTimestampSql,
+} from "@/lib/calendar-day";
 import { computeStreakSilence } from "@/lib/streak-facts";
+import { ARABIC_STOPWORDS, ENGLISH_STOPWORDS } from "@/lib/text";
 
 import {
   messagesWhere,
@@ -40,8 +45,75 @@ import type {
   PeopleListResult,
   PersonDetailParams,
   PersonDetailResult,
+  PersonDynamics,
   SurpriseMemoryResult,
 } from "./types";
+
+const PERSON_STOP_WORDS: readonly string[] = [
+  ...ENGLISH_STOPWORDS,
+  ...ARABIC_STOPWORDS,
+];
+
+const CONVERSATION_GAP_SEC = 4 * 60 * 60;
+
+function emptyDynamics(): PersonDynamics {
+  return {
+    conversationStarts: { you: 0, them: 0 },
+    medianReplyMs: { you: null, them: null },
+    avgMessageLength: { you: 0, them: 0 },
+    yearlyVolume: [],
+    busiestDay: null,
+    topWords: [],
+    mediaSplit: { you: 0, them: 0 },
+    themSender: null,
+  };
+}
+
+function normalizeSenderKey(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+function resolveThemSender(
+  conversation: string,
+  balance: Array<{ sender: string; messageCount: number }>,
+): string | null {
+  if (balance.length === 0) {
+    return null;
+  }
+  const normalized = normalizeSenderKey(conversation);
+  const matched = balance.find((row) => {
+    const s = normalizeSenderKey(row.sender);
+    return s === normalized || normalized.includes(s) || s.includes(normalized);
+  });
+  if (matched) {
+    return matched.sender;
+  }
+  return [...balance].sort((a, b) => b.messageCount - a.messageCount)[0]
+    ?.sender ?? null;
+}
+
+function isThemSender(sender: string, themSender: string | null): boolean {
+  if (!themSender) {
+    return false;
+  }
+  return normalizeSenderKey(sender) === normalizeSenderKey(themSender);
+}
+
+function sumBySide(
+  rows: Array<{ sender: string; value: number }>,
+  themSender: string | null,
+): { you: number; them: number } {
+  let you = 0;
+  let them = 0;
+  for (const row of rows) {
+    if (isThemSender(row.sender, themSender)) {
+      them += row.value;
+    } else {
+      you += row.value;
+    }
+  }
+  return { you, them };
+}
 
 function optionalRecord(
   value: unknown,
@@ -220,19 +292,24 @@ export async function deskHome(
   }));
 
   const now = new Date();
-  const month = now.getUTCMonth() + 1;
-  const day = now.getUTCDate();
+  // Browser-local calendar day (worker shares the page timezone).
+  const month = now.getMonth() + 1;
+  const day = now.getDate();
+  const localOffsetSec = localUtcOffsetSeconds(now.getTime());
+  const localSentAt = localWallTimestampSql("sent_at");
   const onThisDayCountSql = `
     SELECT CAST(COUNT(*) AS DOUBLE) AS message_count
     FROM messages
     WHERE ${msg.clause}
-      AND EXTRACT(month FROM sent_at) = ?
-      AND EXTRACT(day FROM sent_at) = ?
+      AND EXTRACT(month FROM ${localSentAt}) = ?
+      AND EXTRACT(day FROM ${localSentAt}) = ?
   `;
   const onThisDayRow = onlyRow(
     await preparedRows(connection, onThisDayCountSql, [
       ...msg.params,
+      localOffsetSec,
       month,
+      localOffsetSec,
       day,
     ]),
     "on this day count",
@@ -254,7 +331,7 @@ export async function deskHome(
           AND kind = 'image'
           AND zip_path NOT LIKE 'omitted://%'
         ORDER BY taken_at DESC NULLS LAST, rowid DESC
-        LIMIT 6
+        LIMIT 5
       `,
       med.params,
     )
@@ -274,13 +351,13 @@ export async function deskHome(
           media_ref
         FROM messages
         WHERE ${msg.clause}
-          AND EXTRACT(month FROM sent_at) = ?
-          AND EXTRACT(day FROM sent_at) = ?
+          AND EXTRACT(month FROM ${localSentAt}) = ?
+          AND EXTRACT(day FROM ${localSentAt}) = ?
           AND text IS NOT NULL
         ORDER BY sent_at DESC, rowid DESC
         LIMIT 3
       `,
-      [...msg.params, month, day],
+      [...msg.params, localOffsetSec, month, localOffsetSec, day],
     )
   ).map(messageItem);
 
@@ -355,10 +432,12 @@ export async function onThisDay(
   const msg = messagesWhere(filter);
   const med = mediaWhere(filter);
   const now = new Date();
-  const month =
-    optionalNumber(params, "month") ?? now.getUTCMonth() + 1;
-  const day = optionalNumber(params, "day") ?? now.getUTCDate();
+  const month = optionalNumber(params, "month") ?? now.getMonth() + 1;
+  const day = optionalNumber(params, "day") ?? now.getDate();
   const limit = boundedInteger(optionalNumber(params, "limit"), 40, 1, 200);
+  const localOffsetSec = localUtcOffsetSeconds(now.getTime());
+  const localSentAt = localWallTimestampSql("sent_at");
+  const localTakenAt = localWallTimestampSql("taken_at");
 
   const messages = (
     await preparedRows(
@@ -374,12 +453,12 @@ export async function onThisDay(
           media_ref
         FROM messages
         WHERE ${msg.clause}
-          AND EXTRACT(month FROM sent_at) = ?
-          AND EXTRACT(day FROM sent_at) = ?
+          AND EXTRACT(month FROM ${localSentAt}) = ?
+          AND EXTRACT(day FROM ${localSentAt}) = ?
         ORDER BY sent_at DESC, rowid DESC
         LIMIT ?
       `,
-      [...msg.params, month, day, limit],
+      [...msg.params, localOffsetSec, month, localOffsetSec, day, limit],
     )
   ).map(messageItem);
 
@@ -397,13 +476,13 @@ export async function onThisDay(
         FROM media
         WHERE ${med.clause}
           AND taken_at IS NOT NULL
-          AND EXTRACT(month FROM taken_at) = ?
-          AND EXTRACT(day FROM taken_at) = ?
+          AND EXTRACT(month FROM ${localTakenAt}) = ?
+          AND EXTRACT(day FROM ${localTakenAt}) = ?
           AND zip_path NOT LIKE 'omitted://%'
         ORDER BY taken_at DESC, rowid DESC
         LIMIT ?
       `,
-      [...med.params, month, day, limit],
+      [...med.params, localOffsetSec, month, localOffsetSec, day, limit],
     )
   ).map(mediaItem);
 
@@ -518,6 +597,7 @@ export async function personDetail(
       longestStreakDays: 0,
       longestSilenceDays: 0,
       media: [],
+      dynamics: emptyDynamics(),
     };
   }
 
@@ -631,6 +711,226 @@ export async function personDetail(
     )
   ).map(mediaItem);
 
+  const themSender = resolveThemSender(conversation, senderBalance);
+
+  const startRows = (
+    await preparedRows(
+      connection,
+      `
+        WITH ordered AS (
+          SELECT
+            sender,
+            sent_at,
+            lag(sent_at) OVER (ORDER BY sent_at ASC, rowid ASC) AS prev_sent_at
+          FROM messages
+          WHERE ${msg.clause}
+        )
+        SELECT
+          sender,
+          CAST(COUNT(*) AS DOUBLE) AS start_count
+        FROM ordered
+        WHERE prev_sent_at IS NULL
+           OR date_diff('second', prev_sent_at, sent_at) >= ${CONVERSATION_GAP_SEC}
+        GROUP BY sender
+      `,
+      msg.params,
+    )
+  ).map((row) => ({
+    sender: readString(row, "sender"),
+    value: readNumber(row, "start_count"),
+  }));
+
+  const replyRows = await preparedRows(
+    connection,
+    `
+      WITH ordered AS (
+        SELECT
+          sender,
+          sent_at,
+          lag(sender) OVER (ORDER BY sent_at ASC, rowid ASC) AS prev_sender,
+          lag(sent_at) OVER (ORDER BY sent_at ASC, rowid ASC) AS prev_sent_at
+        FROM messages
+        WHERE ${msg.clause}
+      )
+      SELECT
+        sender,
+        CAST(
+          median(date_diff('millisecond', prev_sent_at, sent_at)) AS DOUBLE
+        ) AS median_reply_ms
+      FROM ordered
+      WHERE prev_sender IS NOT NULL
+        AND prev_sender <> sender
+        AND date_diff('second', prev_sent_at, sent_at) < ${CONVERSATION_GAP_SEC}
+        AND date_diff('second', prev_sent_at, sent_at) >= 0
+      GROUP BY sender
+    `,
+    msg.params,
+  );
+
+  const lengthRows = (
+    await preparedRows(
+      connection,
+      `
+        SELECT
+          sender,
+          CAST(avg(length(COALESCE(text, ''))) AS DOUBLE) AS avg_len
+        FROM messages
+        WHERE ${msg.clause}
+        GROUP BY sender
+      `,
+      msg.params,
+    )
+  ).map((row) => ({
+    sender: readString(row, "sender"),
+    value: readNumber(row, "avg_len"),
+  }));
+
+  const yearlyVolume = (
+    await preparedRows(
+      connection,
+      `
+        SELECT
+          CAST(year(sent_at) AS DOUBLE) AS year,
+          CAST(COUNT(*) AS DOUBLE) AS message_count
+        FROM messages
+        WHERE ${msg.clause}
+        GROUP BY 1
+        ORDER BY 1 ASC
+      `,
+      msg.params,
+    )
+  ).map((row) => ({
+    year: readNumber(row, "year"),
+    messageCount: readNumber(row, "message_count"),
+  }));
+
+  const busiestDayRow = (
+    await preparedRows(
+      connection,
+      `
+        SELECT
+          epoch(date_trunc('day', sent_at)) * 1000.0 AS day_ms,
+          CAST(COUNT(*) AS DOUBLE) AS message_count
+        FROM messages
+        WHERE ${msg.clause}
+        GROUP BY 1
+        ORDER BY COUNT(*) DESC, 1 ASC
+        LIMIT 1
+      `,
+      msg.params,
+    )
+  )[0];
+
+  const topWords = (
+    await preparedRows(
+      connection,
+      `
+        WITH sampled AS (
+          SELECT text
+          FROM messages
+          WHERE ${msg.clause}
+            AND text IS NOT NULL
+            AND length(trim(text)) > 0
+          USING SAMPLE 20_000 ROWS
+        ),
+        words AS (
+          SELECT extracted.word
+          FROM sampled,
+          UNNEST(
+            regexp_extract_all(
+              lower(COALESCE(text, '')),
+              '[\\p{L}\\p{M}\\p{N}]+'
+            )
+          ) AS extracted(word)
+        )
+        SELECT
+          word,
+          CAST(COUNT(*) AS DOUBLE) AS word_count
+        FROM words
+        WHERE length(word) >= 2
+          AND word NOT IN (${PERSON_STOP_WORDS.map(() => "?").join(", ")})
+        GROUP BY word
+        ORDER BY COUNT(*) DESC, word ASC
+        LIMIT 12
+      `,
+      [...msg.params, ...PERSON_STOP_WORDS],
+    )
+  ).map((row) => ({
+    word: readString(row, "word"),
+    count: readNumber(row, "word_count"),
+  }));
+
+  const mediaSplitRows = (
+    await preparedRows(
+      connection,
+      `
+        SELECT
+          sender,
+          CAST(COUNT(*) AS DOUBLE) AS media_count
+        FROM messages
+        WHERE ${msg.clause}
+          AND media_ref IS NOT NULL
+          AND media_ref <> ''
+        GROUP BY sender
+      `,
+      msg.params,
+    )
+  ).map((row) => ({
+    sender: readString(row, "sender"),
+    value: readNumber(row, "media_count"),
+  }));
+
+  const conversationStarts = sumBySide(startRows, themSender);
+  const mediaSplit = sumBySide(mediaSplitRows, themSender);
+
+  let youLen = 0;
+  let themLen = 0;
+  let youLenN = 0;
+  let themLenN = 0;
+  for (const row of lengthRows) {
+    if (isThemSender(row.sender, themSender)) {
+      themLen += row.value;
+      themLenN += 1;
+    } else {
+      youLen += row.value;
+      youLenN += 1;
+    }
+  }
+
+  let youReply: number | null = null;
+  let themReply: number | null = null;
+  for (const row of replyRows) {
+    const ms = readNullableNumber(row, "median_reply_ms");
+    if (ms === null) continue;
+    if (isThemSender(readString(row, "sender"), themSender)) {
+      themReply = ms;
+    } else if (youReply === null) {
+      youReply = ms;
+    } else {
+      // Multiple "you" senders (groups): keep the faster median as representative.
+      youReply = Math.min(youReply, ms);
+    }
+  }
+
+  const dynamics: PersonDynamics = {
+    conversationStarts,
+    medianReplyMs: { you: youReply, them: themReply },
+    avgMessageLength: {
+      you: youLenN > 0 ? youLen / youLenN : 0,
+      them: themLenN > 0 ? themLen / themLenN : 0,
+    },
+    yearlyVolume,
+    busiestDay: busiestDayRow
+      ? {
+          dayMs: readNumber(busiestDayRow, "day_ms"),
+          messageCount: readNumber(busiestDayRow, "message_count"),
+        }
+      : null,
+    topWords,
+    mediaSplit,
+    themSender,
+  };
+
   return {
     conversation,
     platform: readString(platformRow, "platform"),
@@ -653,6 +953,7 @@ export async function personDetail(
     longestStreakDays,
     longestSilenceDays,
     media,
+    dynamics,
   };
 }
 

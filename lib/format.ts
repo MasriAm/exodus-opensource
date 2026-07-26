@@ -15,6 +15,8 @@ export function formatNumber(value: number): string {
   return numberFormatter.format(value);
 }
 
+export { pluralize } from "@/lib/ui-text";
+
 export function formatCompactNumber(value: number): string {
   return compactNumberFormatter.format(value);
 }

@@ -123,16 +123,41 @@ export class ZipEntryMap {
     return [...this.entryPaths];
   }
 
-  async readText(path: string): Promise<string> {
+  /** Uncompressed size when the ZIP central directory provides it; else null. */
+  entrySize(path: string): number | null {
     const entry = this.resolve(path);
+    const size = entry.uncompressedSize;
+    return typeof size === "number" && Number.isFinite(size) ? size : null;
+  }
+
+  async readText(path: string, options?: { maxBytes?: number }): Promise<string> {
+    const entry = this.resolve(path);
+    const maxBytes = options?.maxBytes;
+    if (maxBytes !== undefined) {
+      const size = entry.uncompressedSize;
+      if (typeof size === "number" && size > maxBytes) {
+        throw new Error(
+          `ZIP entry too large to load into memory (${size} bytes > ${maxBytes}): ${path}`,
+        );
+      }
+    }
     return entry.getData(new TextWriter("utf-8"), {
       checkSignature: true,
       useWebWorkers: false,
     });
   }
 
-  async readBlob(path: string): Promise<Blob> {
+  async readBlob(path: string, options?: { maxBytes?: number }): Promise<Blob> {
     const entry = this.resolve(path);
+    const maxBytes = options?.maxBytes;
+    if (maxBytes !== undefined) {
+      const size = entry.uncompressedSize;
+      if (typeof size === "number" && size > maxBytes) {
+        throw new Error(
+          `ZIP entry too large to load into memory (${size} bytes > ${maxBytes}): ${path}`,
+        );
+      }
+    }
     return entry.getData(new BlobWriter(getMimeType(entry.filename)), {
       checkSignature: true,
       useWebWorkers: false,

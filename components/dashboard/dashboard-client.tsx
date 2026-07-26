@@ -1,27 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ActivityHeatmapView } from "./activity-heatmap-view";
-import {
-  CommandPalette,
-  type DeskSection,
-} from "./command-palette";
-import { DeskHome } from "./desk-home";
-import { ExportView } from "./export-view";
+import type { DeskSection } from "./desk-section";
 import { FilterBar } from "./filter-bar";
-import { FootprintView } from "./footprint-view";
 import { DashboardHeader } from "./header";
-import { MediaView, type MediaItem as MediaViewItem } from "./media-view";
-import {
-  MessagesView,
-  type ConversationItem,
-  type MessageItem as MessageViewItem,
+import type { MediaItem as MediaViewItem } from "./media-view";
+import type {
+  ConversationItem,
+  MessageItem as MessageViewItem,
 } from "./messages-view";
-import { PeopleView } from "./people-view";
-import { SearchView, type SearchHit as SearchViewHit } from "./search-view";
+import type { SearchHit as SearchViewHit } from "./search-view";
 import { DashboardSidebar } from "./sidebar";
 
+import { useArchiveSession, setSessionFlash } from "@/components/archive-session";
+import { PressButton } from "@/components/capsule/press-button";
+import { StatePanel } from "@/components/state-panel";
 import type { ArchiveFilter } from "@/lib/db/archive-filter";
 import { yearBoundsMs } from "@/lib/db/archive-filter";
 import type {
@@ -30,7 +26,6 @@ import type {
   FootprintResult,
   IngestApi,
   MediaItem,
-  MessageCursor,
   MessageHeatmapResult,
   MessageItem,
   PeopleListItem,
@@ -38,41 +33,107 @@ import type {
   SearchHit,
 } from "@/lib/db/types";
 import { friendlyError } from "@/lib/errors";
-import { useArchiveSession, setSessionFlash } from "@/components/archive-session";
-import { StatePanel } from "@/components/state-panel";
-import { useRouter } from "next/navigation";
+import { isQueryTimeoutError } from "@/lib/query-timeout";
+
+function SectionLoading({ title }: { title: string }) {
+  return (
+    <StatePanel
+      kind="loading"
+      title={title}
+      description="Loading this section of the desk."
+    />
+  );
+}
+
+const DeskHome = dynamic(
+  () => import("./desk-home").then((mod) => mod.DeskHome),
+  {
+    ssr: false,
+    loading: () => <SectionLoading title="Opening the overview" />,
+  },
+);
+const PeopleView = dynamic(
+  () => import("./people-view").then((mod) => mod.PeopleView),
+  {
+    ssr: false,
+    loading: () => <SectionLoading title="Opening the card catalog" />,
+  },
+);
+const MessagesView = dynamic(
+  () => import("./messages-view").then((mod) => mod.MessagesView),
+  {
+    ssr: false,
+    loading: () => <SectionLoading title="Opening messages" />,
+  },
+);
+const SearchView = dynamic(
+  () => import("./search-view").then((mod) => mod.SearchView),
+  {
+    ssr: false,
+    loading: () => <SectionLoading title="Opening search" />,
+  },
+);
+const MediaView = dynamic(
+  () => import("./media-view").then((mod) => mod.MediaView),
+  {
+    ssr: false,
+    loading: () => <SectionLoading title="Opening media" />,
+  },
+);
+const ActivityHeatmapView = dynamic(
+  () =>
+    import("./activity-heatmap-view").then((mod) => mod.ActivityHeatmapView),
+  {
+    ssr: false,
+    loading: () => <SectionLoading title="Opening the calendar" />,
+  },
+);
+const FootprintView = dynamic(
+  () => import("./footprint-view").then((mod) => mod.FootprintView),
+  {
+    ssr: false,
+    loading: () => <SectionLoading title="Opening footprint" />,
+  },
+);
+const ExportView = dynamic(
+  () => import("./export-view").then((mod) => mod.ExportView),
+  {
+    ssr: false,
+    loading: () => <SectionLoading title="Opening export" />,
+  },
+);
 
 const VIEW_LABELS: Record<
   DeskSection,
   { eyebrow: string; title: string; subtitle: string }
 > = {
   desk: {
-    eyebrow: "Reading desk",
-    title: "Your archive at a glance",
+    eyebrow: "Archive terminal",
+    title: "Overview",
     subtitle:
       "The overview of what you imported — counts, a search, and a few places to start.",
   },
   people: {
     eyebrow: "Card catalog",
-    title: "People",
+    title: "Personnel analysis",
     subtitle:
       "Every correspondent in the archive, with streaks, silence, and shared media.",
   },
   messages: {
     eyebrow: "Correspondence",
-    title: "Messages",
+    title: "Message archive",
     subtitle: "Threads and their messages, still sitting only in this browser.",
   },
   media: {
     eyebrow: "Contact sheet",
-    title: "Media",
+    title: "Media archive",
     subtitle: "Photographs and attachments pulled from the export on demand.",
   },
   activity: {
     eyebrow: "Year ledger",
-    title: "Calendar",
+    title: "Activity calendar",
     subtitle:
-      "Message density across a year — sepia for volume, teal only for the day you select.",
+      "Message density across a year — click any active day to read what landed.",
   },
   search: {
     eyebrow: "Across every thread",
@@ -81,13 +142,13 @@ const VIEW_LABELS: Record<
   },
   footprint: {
     eyebrow: "Outside the DMs",
-    title: "Footprint",
+    title: "Digital footprint",
     subtitle: "Public comments, interests, and identity changes from the export.",
   },
   export: {
     eyebrow: "Portable by design",
     title: "Export",
-    subtitle: "Download CSV or JSON tables from the local database.",
+    subtitle: "Download a formatted spreadsheet or JSON from the local database.",
   },
 };
 
@@ -138,6 +199,9 @@ type DashboardClientProps = {
   api: IngestApi;
 };
 
+const MESSAGES_PAGE_SIZE = 18;
+const MEDIA_PAGE_SIZE = 24;
+
 export function DashboardClient({ api }: DashboardClientProps) {
   const router = useRouter();
   const { reloadSession } = useArchiveSession();
@@ -152,7 +216,6 @@ export function DashboardClient({ api }: DashboardClientProps) {
   const [surprise, setSurprise] = useState<MessageItem | null>(null);
   const [surpriseLoading, setSurpriseLoading] = useState(false);
   const [surpriseEmpty, setSurpriseEmpty] = useState(false);
-  const [commandsOpen, setCommandsOpen] = useState(false);
   const [searchSeed, setSearchSeed] = useState("");
 
   const [people, setPeople] = useState<PeopleListItem[]>([]);
@@ -169,10 +232,14 @@ export function DashboardClient({ api }: DashboardClientProps) {
     null,
   );
   const [messages, setMessages] = useState<MessageViewItem[]>([]);
-  const [messageCursor, setMessageCursor] = useState<MessageCursor | null>(null);
-  const [messagesHaveMore, setMessagesHaveMore] = useState(false);
+  const [messagesPage, setMessagesPage] = useState(1);
+  const [messagesTotalPages, setMessagesTotalPages] = useState(1);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [mediaPage, setMediaPage] = useState(1);
+  const [mediaKind, setMediaKind] = useState<
+    "image" | "video" | "audio" | "other"
+  >("image");
 
   const [searchResults, setSearchResults] = useState<SearchViewHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -180,8 +247,13 @@ export function DashboardClient({ api }: DashboardClientProps) {
   const [hasSearched, setHasSearched] = useState(false);
 
   const [media, setMedia] = useState<MediaViewItem[]>([]);
+  const [mediaTotalCount, setMediaTotalCount] = useState(0);
   const [mediaLoading, setMediaLoading] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
+  const searchSeqRef = useRef(0);
+  const [peopleOffset, setPeopleOffset] = useState(0);
+  const [peopleHasMore, setPeopleHasMore] = useState(false);
+  const [workerStalled, setWorkerStalled] = useState(false);
 
   const [heatmap, setHeatmap] = useState<MessageHeatmapResult | null>(null);
   const [heatmapLoading, setHeatmapLoading] = useState(false);
@@ -311,45 +383,64 @@ export function DashboardClient({ api }: DashboardClientProps) {
   }, [api, effectiveFilter]);
 
   useEffect(() => {
+    setPeopleOffset(0);
+  }, [effectiveFilter]);
+
+  useEffect(() => {
     if (activeView !== "people") {
       return;
     }
     let active = true;
-    setPeopleLoading(true);
+    if (peopleOffset === 0) {
+      setPeopleLoading(true);
+    }
     setPeopleError(null);
+    const pageSize = 200;
     void api
-      .query("peopleList", { filter: effectiveFilter, limit: 500 })
+      .query("peopleList", {
+        filter: effectiveFilter,
+        limit: pageSize,
+        offset: peopleOffset,
+      })
       .then((result) => {
         if (!active) {
           return;
         }
-        setPeople(result.items);
-        setSelectedPerson((current) => {
-          if (
-            current &&
-            result.items.some((item) => item.conversation === current)
-          ) {
-            return current;
-          }
-          return result.items[0]?.conversation ?? null;
-        });
+        setPeople((current) =>
+          peopleOffset === 0 ? result.items : [...current, ...result.items],
+        );
+        setPeopleHasMore(result.items.length === pageSize);
+        if (peopleOffset === 0) {
+          setSelectedPerson((current) => {
+            if (
+              current &&
+              result.items.some((item) => item.conversation === current)
+            ) {
+              return current;
+            }
+            return result.items[0]?.conversation ?? null;
+          });
+        }
       })
       .catch((loadError: unknown) => {
         if (active) {
+          if (isQueryTimeoutError(loadError)) {
+            setWorkerStalled(true);
+          }
           setPeopleError(
             friendlyError(loadError, "The people index could not be loaded."),
           );
         }
       })
       .finally(() => {
-        if (active) {
+        if (active && peopleOffset === 0) {
           setPeopleLoading(false);
         }
       });
     return () => {
       active = false;
     };
-  }, [activeView, api, effectiveFilter]);
+  }, [activeView, api, effectiveFilter, peopleOffset]);
 
   useEffect(() => {
     if (activeView !== "people" || !selectedPerson) {
@@ -395,7 +486,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
     setMessagesError(null);
     void api
       .query("conversationList", {
-        limit: 1_000,
+        limit: 5_000,
         offset: 0,
         filter: effectiveFilter,
       })
@@ -442,18 +533,26 @@ export function DashboardClient({ api }: DashboardClientProps) {
   }, [activeView, api, effectiveFilter]);
 
   useEffect(() => {
+    setMessagesPage(1);
+  }, [selectedConversation, effectiveFilter]);
+
+  useEffect(() => {
+    setMediaPage(1);
+  }, [effectiveFilter]);
+
+  useEffect(() => {
     if (activeView !== "messages" || selectedConversation === null) {
       return;
     }
     let active = true;
     setMessagesLoading(true);
     setMessagesError(null);
-    setMessages([]);
-    setMessageCursor(null);
+    const offset = (messagesPage - 1) * MESSAGES_PAGE_SIZE;
     void api
       .query("messagesPage", {
         conversation: selectedConversation,
-        limit: 100,
+        limit: MESSAGES_PAGE_SIZE,
+        offset,
         filter: {
           fromMs: effectiveFilter.fromMs,
           toMs: effectiveFilter.toMs,
@@ -464,9 +563,10 @@ export function DashboardClient({ api }: DashboardClientProps) {
         if (!active) {
           return;
         }
-        setMessages([...result.items].reverse().map(mapMessage));
-        setMessageCursor(result.nextBefore);
-        setMessagesHaveMore(result.hasMore);
+        setMessages(result.items.map(mapMessage));
+        setMessagesTotalPages(
+          Math.max(1, Math.ceil(result.totalCount / MESSAGES_PAGE_SIZE)),
+        );
       })
       .catch((loadError: unknown) => {
         if (active) {
@@ -483,7 +583,17 @@ export function DashboardClient({ api }: DashboardClientProps) {
     return () => {
       active = false;
     };
-  }, [activeView, api, effectiveFilter, selectedConversation]);
+  }, [
+    activeView,
+    api,
+    effectiveFilter,
+    messagesPage,
+    selectedConversation,
+  ]);
+
+  useEffect(() => {
+    setMediaPage(1);
+  }, [effectiveFilter, mediaKind]);
 
   useEffect(() => {
     if (activeView !== "media") {
@@ -493,14 +603,23 @@ export function DashboardClient({ api }: DashboardClientProps) {
     setMediaLoading(true);
     setMediaError(null);
     void api
-      .query("mediaList", { limit: 10_000, offset: 0, filter: effectiveFilter })
+      .query("mediaList", {
+        kind: mediaKind,
+        limit: MEDIA_PAGE_SIZE,
+        offset: (mediaPage - 1) * MEDIA_PAGE_SIZE,
+        filter: effectiveFilter,
+      })
       .then((result) => {
         if (active) {
           setMedia(result.items.map(mapMediaItem));
+          setMediaTotalCount(result.totalCount);
         }
       })
       .catch((loadError: unknown) => {
         if (active) {
+          if (isQueryTimeoutError(loadError)) {
+            setWorkerStalled(true);
+          }
           setMediaError(
             friendlyError(loadError, "The media index could not be loaded."),
           );
@@ -514,16 +633,19 @@ export function DashboardClient({ api }: DashboardClientProps) {
     return () => {
       active = false;
     };
-  }, [activeView, api, effectiveFilter]);
+  }, [activeView, api, effectiveFilter, mediaKind, mediaPage]);
 
   useEffect(() => {
     if (activeView !== "activity") {
       return;
     }
-    const targetYear =
-      year ??
-      years[years.length - 1] ??
-      new Date().getUTCFullYear();
+    // Calendar is year-scoped — keep the Year filter in sync with the chart
+    // so "messages match" agrees with the visible heatmap (and the ZIP counts).
+    if (year === null && years.length > 0) {
+      setYear(years[years.length - 1] ?? null);
+      return;
+    }
+    const targetYear = year ?? new Date().getUTCFullYear();
     let active = true;
     setHeatmapLoading(true);
     setHeatmapError(null);
@@ -559,64 +681,39 @@ export function DashboardClient({ api }: DashboardClientProps) {
     };
   }, [activeView, api, filter.conversation, filter.platform, year, years]);
 
-  const loadEarlierMessages = useCallback(() => {
-    if (
-      selectedConversation === null ||
-      messageCursor === null ||
-      messagesLoading
-    ) {
-      return;
-    }
-    setMessagesLoading(true);
-    void api
-      .query("messagesPage", {
-        conversation: selectedConversation,
-        before: messageCursor,
-        limit: 100,
-        filter: {
-          fromMs: effectiveFilter.fromMs,
-          toMs: effectiveFilter.toMs,
-          platform: effectiveFilter.platform,
-        },
-      })
-      .then((result) => {
-        const earlier = [...result.items].reverse().map(mapMessage);
-        setMessages((current) => [...earlier, ...current]);
-        setMessageCursor(result.nextBefore);
-        setMessagesHaveMore(result.hasMore);
-      })
-      .catch((loadError: unknown) => {
-        setMessagesError(
-          friendlyError(loadError, "Earlier messages could not be loaded."),
-        );
-      })
-      .finally(() => setMessagesLoading(false));
-  }, [
-    api,
-    effectiveFilter,
-    messageCursor,
-    messagesLoading,
-    selectedConversation,
-  ]);
-
   const search = useCallback(
     (term: string) => {
+      const seq = searchSeqRef.current + 1;
+      searchSeqRef.current = seq;
       setSearchLoading(true);
       setSearchError(null);
       setHasSearched(true);
       void api
-        .query("search", { term, limit: 500, offset: 0, filter: effectiveFilter })
+        .query("search", { term, limit: 200, offset: 0, filter: effectiveFilter })
         .then((result) => {
+          if (searchSeqRef.current !== seq) {
+            return;
+          }
           setSearchResults(
             result.groups.flatMap((group) => group.hits.map(mapSearchHit)),
           );
+          setSearchLoading(false);
         })
         .catch((queryError: unknown) => {
+          if (searchSeqRef.current !== seq) {
+            return;
+          }
+          if (isQueryTimeoutError(queryError)) {
+            setWorkerStalled(true);
+          }
           setSearchError(
-            friendlyError(queryError, "The local search could not be completed."),
+            friendlyError(
+              queryError,
+              "The local search could not be completed.",
+            ),
           );
-        })
-        .finally(() => setSearchLoading(false));
+          setSearchLoading(false);
+        });
     },
     [api, effectiveFilter],
   );
@@ -626,10 +723,30 @@ export function DashboardClient({ api }: DashboardClientProps) {
     [api],
   );
   const exportTable = useCallback(
-    (table: "messages" | "media" | "events", format: "csv" | "json") =>
-      api.exportTable(table, format),
+    (
+      table: "messages" | "media" | "events",
+      format: "xlsx" | "csv" | "json",
+    ) => api.exportTable(table, format),
     [api],
   );
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.hidden) {
+        return;
+      }
+      void api
+        .ping()
+        .then(() => setWorkerStalled(false))
+        .catch((error: unknown) => {
+          if (isQueryTimeoutError(error)) {
+            setWorkerStalled(true);
+          }
+        });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [api]);
 
   const openPerson = useCallback((conversation: string) => {
     setSelectedPerson(conversation);
@@ -681,46 +798,34 @@ export function DashboardClient({ api }: DashboardClientProps) {
   const filterMatch = useMemo(() => {
     switch (activeView) {
       case "people":
-        return { count: people.length, label: "people match" };
+        return { count: people.length, noun: "person", plural: "people" };
       case "messages":
         return {
-          count: conversations.reduce((sum, row) => sum + row.messageCount, 0),
-          label: "messages match",
+          // Desk COUNT(*) for the same filter — not a sum of the loaded thread page.
+          count: messageCount ?? 0,
+          noun: "message",
         };
       case "media":
-        return { count: media.length, label: "media items match" };
+        return { count: mediaTotalCount, noun: "media item" };
       case "activity":
         return {
           count:
             heatmap?.days.reduce((sum, day) => sum + day.messageCount, 0) ?? 0,
-          label: "messages in this year",
-        };
-      case "search":
-        return {
-          count: searchResults.length,
-          label: hasSearched ? "matches" : "messages in scope",
-        };
-      case "footprint":
-        return {
-          count: footprint?.comments.length ?? 0,
-          label: "public comments",
+          noun: "message",
         };
       default:
         return {
           count: messageCount ?? 0,
-          label: "messages match",
+          noun: "message",
         };
     }
   }, [
     activeView,
     conversations,
-    footprint,
-    hasSearched,
     heatmap,
-    media.length,
+    mediaTotalCount,
     messageCount,
     people.length,
-    searchResults.length,
   ]);
 
   const activeContent = (() => {
@@ -817,6 +922,8 @@ export function DashboardClient({ api }: DashboardClientProps) {
             selected={selectedPerson}
             detail={personDetail}
             detailLoading={personLoading}
+            hasMore={peopleHasMore}
+            onLoadMore={() => setPeopleOffset((value) => value + 200)}
             onSelect={setSelectedPerson}
             onOpenMessages={openMessages}
             readBlob={readMediaBlob}
@@ -830,9 +937,10 @@ export function DashboardClient({ api }: DashboardClientProps) {
             messages={messages}
             loading={messagesLoading}
             error={messagesError}
-            hasMore={messagesHaveMore}
+            page={messagesPage}
+            totalPages={messagesTotalPages}
             onSelectConversation={setSelectedConversation}
-            onLoadMore={loadEarlierMessages}
+            onChangePage={setMessagesPage}
           />
         );
       case "search":
@@ -847,15 +955,26 @@ export function DashboardClient({ api }: DashboardClientProps) {
             onOpenConversation={openMessages}
           />
         );
-      case "media":
+      case "media": {
+        const mediaTotalPages = Math.max(
+          1,
+          Math.ceil(mediaTotalCount / MEDIA_PAGE_SIZE),
+        );
         return (
           <MediaView
             items={media}
+            totalCount={mediaTotalCount}
+            page={mediaPage}
+            totalPages={mediaTotalPages}
             loading={mediaLoading}
             error={mediaError}
+            kind={mediaKind}
+            onChangeKind={setMediaKind}
             readBlob={readMediaBlob}
+            onChangePage={setMediaPage}
           />
         );
+      }
       case "activity":
         return (
           <ActivityHeatmapView
@@ -891,48 +1010,58 @@ export function DashboardClient({ api }: DashboardClientProps) {
         active={activeView}
         onSelect={setActiveView}
         showFootprint={showFootprint || footprintLoading}
-        onOpenCommands={() => setCommandsOpen(true)}
       />
-      <div className="min-w-0 flex-1 border-ink bg-cream/40 lg:border-s-2">
+      <div className="min-w-0 flex-1 bg-paper">
         <DashboardHeader
           eyebrow={activeLabel.eyebrow}
           title={activeLabel.title}
           subtitle={activeLabel.subtitle}
           messageCount={messageCount}
+          onExport={() => setActiveView("export")}
         />
-        <div className="mx-auto w-full max-w-[1140px] space-y-6 p-4 sm:p-6 lg:px-8 lg:py-6">
+        {/* Left-aligned in the content column — not centered in the viewport */}
+        <div className="w-full max-w-[1280px] space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+          {workerStalled ? (
+            <StatePanel
+              kind="error"
+              title="The private worker went quiet"
+              description="A query timed out — often after the tab was backgrounded. Reload the desk and drop your export again."
+              action={
+                <PressButton
+                  type="button"
+                  onClick={() => {
+                    void reloadDesk();
+                  }}
+                >
+                  Reload the desk
+                </PressButton>
+              }
+            />
+          ) : null}
           {activeView === "messages" ||
           activeView === "people" ||
           activeView === "media" ||
           activeView === "activity" ? (
-            <FilterBar
-              options={options}
-              filter={filter}
-              year={year}
-              years={years}
-              onChange={setFilter}
-              onChangeYear={setYear}
-              matchCount={filterMatch.count}
-              matchLabel={filterMatch.label}
-            />
+            <div className="archive-panel p-3 sm:p-4">
+              <FilterBar
+                options={options}
+                filter={filter}
+                year={year}
+                years={years}
+                onChange={setFilter}
+                onChangeYear={setYear}
+                matchCount={filterMatch.count}
+                matchNoun={filterMatch.noun}
+                matchPlural={
+                  "plural" in filterMatch ? filterMatch.plural : undefined
+                }
+              />
+            </div>
           ) : null}
           {activeContent}
         </div>
       </div>
 
-      <CommandPalette
-        open={commandsOpen}
-        onOpenChange={setCommandsOpen}
-        options={options}
-        hasFootprint={showFootprint || footprintLoading}
-        onGoSection={setActiveView}
-        onGoPerson={openPerson}
-        onSearch={(query) => {
-          setSearchSeed(query);
-          setActiveView("search");
-          search(query);
-        }}
-      />
     </main>
   );
 }

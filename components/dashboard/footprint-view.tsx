@@ -3,16 +3,23 @@
 import { useMemo, useState } from "react";
 
 import { TagBox } from "@/components/capsule/tag-box";
-import { YearSlider } from "@/components/capsule/year-slider";
+import { ArchivePanel } from "@/components/dashboard/archive-panel";
 import { StatePanel } from "@/components/state-panel";
-import { formatDate, formatNumber } from "@/lib/format";
+import { UserText } from "@/components/user-text";
+import { formatDate, formatNumber, pluralize } from "@/lib/format";
+import { followingWithoutFollowBack } from "@/lib/follow-facts";
 import type { FootprintResult } from "@/lib/db/types";
+import { cn } from "@/lib/utils";
 
 type FootprintViewProps = {
   data: FootprintResult | null;
   loading: boolean;
   error: string | null;
 };
+
+type FollowFilter = "all" | "follower" | "following" | "not_back";
+
+const LIST_PAGE = 25;
 
 function formatDuration(sec: number | null): string {
   if (sec === null || !Number.isFinite(sec)) {
@@ -26,6 +33,28 @@ function formatDuration(sec: number | null): string {
   return `${minutes}m ${seconds}s`;
 }
 
+function ShowMoreButton({
+  remaining,
+  onClick,
+}: {
+  remaining: number;
+  onClick: () => void;
+}) {
+  if (remaining <= 0) {
+    return null;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="mt-3 w-full border border-ink/30 bg-receipt py-2.5 font-display text-xs font-bold tracking-[0.04em] text-ink transition-colors hover:border-ink hover:bg-cream"
+    >
+      Show {formatNumber(Math.min(LIST_PAGE, remaining))} more ·{" "}
+      {formatNumber(remaining)} left
+    </button>
+  );
+}
+
 export function FootprintView({ data, loading, error }: FootprintViewProps) {
   const years = useMemo(
     () =>
@@ -35,14 +64,20 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
   const [year, setYear] = useState<number | null>(null);
   const [commentYear, setCommentYear] = useState<number | "all">("all");
   const [commentQuery, setCommentQuery] = useState("");
-  const [followKind, setFollowKind] = useState<"all" | "follower" | "following">(
-    "all",
-  );
+  const [followKind, setFollowKind] = useState<FollowFilter>("all");
+  const [followQuery, setFollowQuery] = useState("");
+  const [followLimit, setFollowLimit] = useState(LIST_PAGE);
+  const [commentLimit, setCommentLimit] = useState(LIST_PAGE);
   const activeYear = year ?? years[years.length - 1] ?? null;
   const topics =
     data?.interestsByYear.find((row) => row.year === activeYear)?.topics ?? [];
   const commentYears = [...new Set((data?.comments ?? []).map((c) => c.year))].sort(
     (a, b) => b - a,
+  );
+
+  const notFollowingBack = useMemo(
+    () => followingWithoutFollowBack(data?.followEvents ?? []),
+    [data],
   );
 
   const visibleComments = useMemo(() => {
@@ -68,10 +103,23 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
     if (!data) {
       return [];
     }
-    return data.followEvents.filter(
-      (row) => followKind === "all" || row.kind === followKind,
+    const base =
+      followKind === "not_back"
+        ? notFollowingBack
+        : data.followEvents.filter(
+            (row) => followKind === "all" || row.kind === followKind,
+          );
+    const needle = followQuery.trim().toLocaleLowerCase();
+    if (!needle) {
+      return base;
+    }
+    return base.filter((row) =>
+      row.username.toLocaleLowerCase().includes(needle),
     );
-  }, [data, followKind]);
+  }, [data, followKind, followQuery, notFollowingBack]);
+
+  const shownFollows = visibleFollows.slice(0, followLimit);
+  const shownComments = visibleComments.slice(0, commentLimit);
 
   if (error) {
     return (
@@ -107,50 +155,118 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
   }
 
   return (
-    <div className="space-y-10">
-      <p className="font-body text-[15px] font-medium leading-7 text-ink/80">
-        Everything outside the private threads — still local, still yours.
+    <div className="space-y-5">
+      <p className="font-body text-[15px] font-medium leading-7 text-ink/85">
+        Everything outside the private threads — still local, still yours. Each
+        block below is a separate part of the export.
       </p>
 
-      {data.profileHistory.length > 0 ? (
-        <section>
-          <h2 className="font-display text-[17px] font-bold text-ink">
-            {">>"} Identity timeline
-          </h2>
-          <p className="mt-1 font-body text-[15px] text-ink/75">
-            Username and bio changes from Instagram&apos;s profile history JSON.
-          </p>
-          <ul className="mt-4 border-y border-ink/20">
-            {data.profileHistory.map((row) => (
-              <li
-                key={`${row.field}-${row.occurredAtMs}-${row.value}`}
-                className="border-b border-ink/20 py-3 last:border-b-0"
+      {data.profileHistory.length > 0 || data.interestsByYear.length > 0 ? (
+        <div className="grid items-start gap-5 lg:grid-cols-2">
+          {data.profileHistory.length > 0 ? (
+            <ArchivePanel
+              title="Profile iterations"
+              subtitle="Each row is either a username change or a bio update from your Instagram export — labeled so you can tell which."
+            >
+              <ul className="space-y-4">
+                {data.profileHistory.map((row) => {
+                  const isUsername = row.field === "username";
+                  const isBio = row.field === "bio";
+                  const kindLabel = isUsername
+                    ? "Username change"
+                    : isBio
+                      ? "Bio update"
+                      : row.field;
+                  return (
+                    <li
+                      key={`${row.field}-${row.occurredAtMs}-${row.value}`}
+                      className="border-b border-ink/20 pb-3 last:border-b-0 last:pb-0"
+                    >
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span
+                          className={cn(
+                            "inline-flex border px-1.5 py-0.5 font-display text-[10px] font-bold uppercase tracking-[0.08em]",
+                            isUsername
+                              ? "border-teal bg-teal-wash text-teal"
+                              : isBio
+                                ? "border-ink/40 bg-paper text-ink/80"
+                                : "border-ink/30 bg-cream text-ink/70",
+                          )}
+                        >
+                          {kindLabel}
+                        </span>
+                        <span className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/60">
+                          {formatDate(row.occurredAtMs)}
+                        </span>
+                      </div>
+                      <p className="mt-2 font-body text-[13px] text-ink/70">
+                        {isUsername
+                          ? "Changed username to"
+                          : isBio
+                            ? "Updated bio to"
+                            : "Changed to"}
+                      </p>
+                      <UserText className="mt-0.5 block font-body text-[16px] font-semibold text-ink">
+                        {isUsername ? `@${row.value}` : row.value}
+                      </UserText>
+                    </li>
+                  );
+                })}
+              </ul>
+            </ArchivePanel>
+          ) : null}
+          {data.interestsByYear.length > 0 && activeYear !== null ? (
+            <ArchivePanel
+              title="The algorithm (interests)"
+              subtitle="See what the machine thought you cared about."
+            >
+              <div className="flex flex-wrap gap-2 rounded-[2px] border border-dotted border-ink/40 p-3">
+                {topics.map((topic) => (
+                  <TagBox key={topic}>{`> ${topic}`}</TagBox>
+                ))}
+              </div>
+              <div
+                className="mt-4 flex flex-wrap gap-2"
+                role="tablist"
+                aria-label="Interest year"
               >
-                <p className="font-display text-[11px] uppercase tracking-[0.08em] text-ink/70">
-                  {row.field} · {formatDate(row.occurredAtMs)}
-                </p>
-                <p className="mt-1 font-body text-[15px] font-medium text-ink" dir="auto">
-                  {row.value}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </section>
+                {years.map((entry) => (
+                  <button
+                    key={entry}
+                    type="button"
+                    role="tab"
+                    aria-selected={entry === activeYear}
+                    onClick={() => setYear(entry)}
+                    className={cn(
+                      "border-2 border-ink px-2.5 py-1 font-display text-xs font-bold transition-colors",
+                      entry === activeYear
+                        ? "border-teal bg-teal-wash text-teal"
+                        : "bg-cream text-ink/75 hover:bg-receipt",
+                    )}
+                  >
+                    {entry}
+                  </button>
+                ))}
+              </div>
+            </ArchivePanel>
+          ) : null}
+        </div>
       ) : null}
 
       {data.personalInfo.length > 0 ? (
-        <section>
-          <h2 className="font-display text-[17px] font-bold text-ink">
-            {">>"} Personal information
-          </h2>
-          <p className="mt-1 font-body text-[15px] text-ink/75">
-            Fields Instagram listed under personal information in the export.
-          </p>
-          <ul className="mt-4 space-y-4 border-y border-ink/20 py-4">
+        <ArchivePanel
+          title="Personal information"
+          subtitle="Fields Instagram listed under personal information in the export."
+        >
+          <ul className="space-y-3">
             {data.personalInfo.map((row) => (
-              <li key={`${row.occurredAtMs}-${row.path}`}>
-                <p className="font-display text-[11px] uppercase tracking-[0.08em] text-ink/70">
-                  {row.path || "personal_information"} · {formatDate(row.occurredAtMs)}
+              <li
+                key={`${row.occurredAtMs}-${row.path}`}
+                className="border border-ink/20 bg-receipt px-3 py-3"
+              >
+                <p className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/75">
+                  {row.path || "personal_information"} ·{" "}
+                  {formatDate(row.occurredAtMs)}
                 </p>
                 <dl className="mt-2 space-y-1">
                   {row.fields.map((field) => (
@@ -158,8 +274,13 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
                       key={`${field.key}-${field.value}`}
                       className="flex flex-wrap gap-x-3 gap-y-1"
                     >
-                      <dt className="font-display text-xs text-teal">{field.key}</dt>
-                      <dd className="font-body text-[15px] text-ink" dir="auto">
+                      <dt className="font-display text-xs font-bold text-teal">
+                        {field.key}
+                      </dt>
+                      <dd
+                        className="font-body text-[15px] font-medium text-ink"
+                        dir="auto"
+                      >
                         {field.value}
                       </dd>
                     </div>
@@ -168,110 +289,120 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
               </li>
             ))}
           </ul>
-        </section>
+        </ArchivePanel>
       ) : null}
 
       {data.followEvents.length > 0 ? (
-        <section>
-          <div className="mb-1 flex flex-wrap items-baseline justify-between gap-3">
-            <h2 className="font-display text-[17px] font-bold text-ink">
-              {">>"} Followers &amp; following
-            </h2>
+        <ArchivePanel
+          title="Followers & following"
+          subtitle="Connections from Instagram's followers/following files. Filter to people you follow who don't follow you back."
+          action={
             <select
-              className="border-b border-ink/40 bg-transparent font-display text-sm outline-none"
+              className="border border-ink/30 bg-cream px-2 py-1.5 font-display text-sm outline-none"
               value={followKind}
-              onChange={(event) =>
-                setFollowKind(
-                  event.target.value as "all" | "follower" | "following",
-                )
-              }
+              onChange={(event) => {
+                setFollowKind(event.target.value as FollowFilter);
+                setFollowLimit(LIST_PAGE);
+              }}
             >
               <option value="all">
                 All ({formatNumber(data.followEvents.length)})
               </option>
               <option value="follower">Followers</option>
               <option value="following">Following</option>
+              <option value="not_back">
+                Not following back ({formatNumber(notFollowingBack.length)})
+              </option>
             </select>
-          </div>
-          <p className="font-body text-[15px] text-ink/75">
-            Follow events from Instagram&apos;s connections files in the export.
+          }
+        >
+          <label className="mb-3 block">
+            <span className="meta-caps text-[11px] text-ink/75">
+              Search usernames
+            </span>
+            <input
+              value={followQuery}
+              onChange={(event) => {
+                setFollowQuery(event.target.value);
+                setFollowLimit(LIST_PAGE);
+              }}
+              dir="auto"
+              placeholder="@someone…"
+              className="mt-1 w-full border-b border-ink/40 bg-transparent py-1.5 font-body text-[15px] outline-none"
+            />
+          </label>
+          <p className="mb-2 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/70">
+            Showing {formatNumber(shownFollows.length)} of{" "}
+            {formatNumber(visibleFollows.length)}
           </p>
-          <ul className="mt-4 max-h-80 overflow-auto border-y border-ink/20">
-            {visibleFollows.map((row) => (
-              <li
-                key={`${row.kind}-${row.username}-${row.occurredAtMs}`}
-                className="flex items-baseline justify-between gap-3 border-b border-ink/20 py-2.5 last:border-b-0"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-display text-xs text-ink" dir="auto">
-                    {row.username}
-                  </p>
-                  <p className="font-display text-[10px] uppercase tracking-[0.08em] text-ink/65">
-                    {row.kind}
-                  </p>
-                </div>
-                <span className="shrink-0 font-display text-[11px] text-ink/70">
-                  {formatDate(row.occurredAtMs)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {data.interestsByYear.length > 0 && activeYear !== null ? (
-        <section>
-          <h2 className="font-display text-[17px] font-bold text-ink">
-            {">>"} Interests over time
-          </h2>
-          <p className="mt-1 font-body text-[15px] text-ink/75">
-            Topics from Instagram&apos;s ads interests file, grouped by year.
-          </p>
-          <YearSlider
-            className="mt-4"
-            years={years}
-            value={activeYear}
-            onChange={(next) => setYear(next)}
+          {shownFollows.length === 0 ? (
+            <p className="font-body text-[15px] font-medium text-ink/75">
+              Nobody matches this filter.
+            </p>
+          ) : (
+            <ul className="divide-y divide-ink/20 border border-ink/20 bg-receipt">
+              {shownFollows.map((row) => (
+                <li
+                  key={`${row.kind}-${row.username}-${row.occurredAtMs}`}
+                  className="flex items-baseline justify-between gap-3 px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p
+                      className="truncate font-display text-xs font-bold text-ink"
+                      dir="auto"
+                    >
+                      {row.username}
+                    </p>
+                    <p className="font-display text-[10px] uppercase tracking-[0.08em] text-ink/65">
+                      {followKind === "not_back"
+                        ? "you follow · no follow back"
+                        : row.kind}
+                    </p>
+                  </div>
+                  <span className="shrink-0 font-display text-[11px] text-ink/70">
+                    {formatDate(row.occurredAtMs)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <ShowMoreButton
+            remaining={visibleFollows.length - shownFollows.length}
+            onClick={() => setFollowLimit((value) => value + LIST_PAGE)}
           />
-          <div className="mt-4 flex flex-wrap gap-2">
-            {topics.map((topic) => (
-              <TagBox key={topic}>{topic}</TagBox>
-            ))}
-          </div>
-        </section>
+        </ArchivePanel>
       ) : null}
 
       {data.comments.length > 0 ? (
-        <section>
-          <h2 className="font-display text-[17px] font-bold text-ink">
-            {">>"} Public comments
-          </h2>
-          <p className="mt-1 font-body text-[15px] text-ink/75">
-            Comments you left in public — filter by year or search the text.
-          </p>
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+        <ArchivePanel
+          title="Public comments"
+          subtitle="Comments you left in public — filter by year or search the text."
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <label className="flex min-w-0 flex-1 flex-col gap-1">
-              <span className="font-display text-[11px] uppercase tracking-[0.08em] text-ink/70">
+              <span className="meta-caps text-[11px] text-ink/75">
                 Search comments
               </span>
               <input
                 value={commentQuery}
-                onChange={(event) => setCommentQuery(event.target.value)}
+                onChange={(event) => {
+                  setCommentQuery(event.target.value);
+                  setCommentLimit(LIST_PAGE);
+                }}
                 dir="auto"
                 placeholder="a phrase, a username…"
                 className="border-b border-ink/40 bg-transparent py-1.5 font-body text-[15px] outline-none"
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="font-display text-[11px] uppercase tracking-[0.08em] text-ink/70">
-                Year
-              </span>
+              <span className="meta-caps text-[11px] text-ink/75">Year</span>
               <select
-                className="border-b border-ink/40 bg-transparent py-1.5 font-display text-sm outline-none"
+                className="border border-ink/30 bg-cream px-2 py-1.5 font-display text-sm outline-none"
                 value={commentYear}
                 onChange={(event) => {
                   const value = event.target.value;
                   setCommentYear(value === "all" ? "all" : Number(value));
+                  setCommentLimit(LIST_PAGE);
                 }}
               >
                 <option value="all">All years</option>
@@ -283,19 +414,20 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
               </select>
             </label>
           </div>
-          <p className="mt-2 font-display text-[11px] uppercase tracking-[0.08em] text-ink/70">
-            {formatNumber(visibleComments.length)} comments match
+          <p className="mt-3 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/70">
+            Showing {formatNumber(shownComments.length)} of{" "}
+            {formatNumber(visibleComments.length)}
           </p>
-          {visibleComments.length === 0 ? (
-            <p className="mt-4 font-body text-[15px] text-ink/75">
+          {shownComments.length === 0 ? (
+            <p className="mt-3 font-body text-[15px] font-medium text-ink/75">
               No comments match this year or search.
             </p>
           ) : (
-            <ul className="mt-4 border-y border-ink/20">
-              {visibleComments.map((comment) => (
+            <ul className="mt-3 divide-y divide-ink/20 border border-ink/20 bg-receipt">
+              {shownComments.map((comment) => (
                 <li
                   key={`${comment.occurredAtMs}-${comment.text.slice(0, 24)}`}
-                  className="border-b border-ink/20 py-4 last:border-b-0"
+                  className="px-3 py-3"
                 >
                   <p
                     className="font-body text-[15px] font-medium leading-7 text-ink"
@@ -303,7 +435,7 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
                   >
                     {comment.text}
                   </p>
-                  <p className="mt-2 font-display text-[11px] uppercase tracking-[0.08em] text-ink/70">
+                  <p className="mt-2 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/70">
                     {formatDate(comment.occurredAtMs)}
                     {comment.title ? ` · ${comment.title}` : null}
                   </p>
@@ -311,28 +443,29 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
               ))}
             </ul>
           )}
-        </section>
+          <ShowMoreButton
+            remaining={visibleComments.length - shownComments.length}
+            onClick={() => setCommentLimit((value) => value + LIST_PAGE)}
+          />
+        </ArchivePanel>
       ) : null}
 
       {data.calls.length > 0 ? (
-        <section>
-          <h2 className="font-display text-[17px] font-bold text-ink">
-            {">>"} Calls
-          </h2>
-          <p className="mt-1 font-body text-[15px] text-ink/75">
-            Voice and video call events from WhatsApp chat exports.
-          </p>
-          <ul className="mt-4 border-y border-ink/20">
+        <ArchivePanel
+          title="Calls"
+          subtitle="Voice and video call events from WhatsApp chat exports."
+        >
+          <ul className="divide-y divide-ink/20 border border-ink/20 bg-receipt">
             {data.calls.map((call) => (
               <li
                 key={`${call.occurredAtMs}-${call.conversation}-${call.media}`}
-                className="flex flex-wrap items-baseline justify-between gap-2 border-b border-ink/20 py-3 last:border-b-0"
+                className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-3"
               >
                 <div>
-                  <p className="font-display text-xs text-ink" dir="auto">
-                    {call.conversation || "Unknown thread"}
+                  <p className="font-display text-xs font-bold text-ink" dir="auto">
+                    {call.conversation}
                   </p>
-                  <p className="font-display text-[11px] uppercase tracking-[0.08em] text-ink/70">
+                  <p className="meta-caps mt-1 text-[10px] text-ink/70">
                     {call.media} · {formatDuration(call.durationSec)}
                   </p>
                 </div>
@@ -342,34 +475,30 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
               </li>
             ))}
           </ul>
-        </section>
+        </ArchivePanel>
       ) : null}
 
       {data.systemNotes.length > 0 ? (
-        <section>
-          <h2 className="font-display text-[17px] font-bold text-ink">
-            {">>"} System notes
-          </h2>
-          <p className="mt-1 font-body text-[15px] text-ink/75">
-            WhatsApp system lines — joins, leaves, and other thread events.
-          </p>
-          <ul className="mt-4 border-y border-ink/20">
+        <ArchivePanel
+          title="System notes"
+          subtitle="WhatsApp system lines from the chat export (group changes, encryption notices, and similar)."
+        >
+          <ul className="divide-y divide-ink/20 border border-ink/20 bg-receipt">
             {data.systemNotes.map((note) => (
               <li
                 key={`${note.occurredAtMs}-${note.text.slice(0, 24)}`}
-                className="border-b border-ink/20 py-3 last:border-b-0"
+                className="px-3 py-3"
               >
-                <p className="font-body text-[15px] text-ink" dir="auto">
+                <p className="font-body text-[15px] font-medium text-ink" dir="auto">
                   {note.text}
                 </p>
-                <p className="mt-1 font-display text-[11px] uppercase tracking-[0.08em] text-ink/70">
-                  <span dir="auto">{note.conversation}</span> ·{" "}
-                  {formatDate(note.occurredAtMs)}
+                <p className="mt-1 font-display text-[11px] text-ink/70">
+                  {note.conversation} · {formatDate(note.occurredAtMs)}
                 </p>
               </li>
             ))}
           </ul>
-        </section>
+        </ArchivePanel>
       ) : null}
     </div>
   );

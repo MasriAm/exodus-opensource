@@ -1,46 +1,69 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  CalendarDays,
-  Download,
-  Fingerprint,
-  Images,
-  LayoutDashboard,
-  MessageCircleMore,
-  Sparkles,
-  Users,
-} from "lucide-react";
 
-import { Brand } from "@/components/brand";
-import type { DeskSection } from "./command-palette";
+import type { DeskSection } from "./desk-section";
 import { cn } from "@/lib/utils";
 
 const CORE_NAV = [
-  { id: "desk", label: "Desk", icon: LayoutDashboard },
-  { id: "messages", label: "Messages", icon: MessageCircleMore },
-  { id: "people", label: "People", icon: Users },
-  { id: "media", label: "Media", icon: Images },
-  { id: "activity", label: "Calendar", icon: CalendarDays },
-  { id: "footprint", label: "Footprint", icon: Fingerprint },
+  { id: "desk", label: "Overview" },
+  { id: "messages", label: "Messages" },
+  { id: "people", label: "People" },
+  { id: "media", label: "Media" },
+  { id: "activity", label: "Calendar" },
+  { id: "search", label: "Search" },
+  { id: "footprint", label: "Footprint" },
 ] as const satisfies ReadonlyArray<{
   id: DeskSection;
   label: string;
-  icon: typeof LayoutDashboard;
 }>;
 
 type DashboardSidebarProps = {
   active: DeskSection;
   onSelect: (view: DeskSection) => void;
   showFootprint: boolean;
-  onOpenCommands: () => void;
 };
+
+function NavItem({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "nav-serif-caps flex min-h-11 w-full shrink-0 items-center gap-2 px-4 py-3 text-start transition-[color,background-color,font-size,font-weight] duration-150 lg:min-h-0 lg:border-b lg:border-dotted lg:border-white/15 lg:px-6",
+        active
+          ? "bg-white/10 text-[1.05rem] font-bold text-teal lg:text-[1.1rem]"
+          : "text-[0.95rem] font-medium text-white/75 hover:bg-white/5 hover:text-white",
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          "font-display text-xs tracking-[0.08em]",
+          active ? "text-teal" : "text-transparent",
+        )}
+      >
+        {">>"}
+      </span>
+      {label}
+    </button>
+  );
+}
 
 export function DashboardSidebar({
   active,
   onSelect,
   showFootprint,
-  onOpenCommands,
 }: DashboardSidebarProps) {
   const router = useRouter();
   const items = CORE_NAV.filter(
@@ -48,85 +71,49 @@ export function DashboardSidebar({
   );
 
   return (
-    <aside className="bg-paper text-ink lg:flex lg:min-h-screen lg:w-48 lg:shrink-0 lg:flex-col lg:border-e lg:border-ink/20">
-      <div className="flex items-center justify-between gap-4 px-4 py-4 lg:block lg:px-4 lg:py-5">
-        <Brand />
-        <button
-          type="button"
-          onClick={onOpenCommands}
-          className="font-display text-[11px] tracking-[0.08em] text-body underline underline-offset-4 lg:mt-3 lg:inline-block"
+    <aside className="relative flex overflow-hidden bg-rail text-white lg:h-screen lg:max-h-screen lg:w-[230px] lg:shrink-0 lg:flex-col">
+      <div className="sidebar-grain" aria-hidden="true" />
+      <div className="relative z-[1] flex items-center justify-between gap-3 px-5 py-4 lg:block lg:px-6 lg:pb-4 lg:pt-7">
+        <Link
+          href="/"
+          className="font-display text-2xl font-bold tracking-[0.22em] text-teal transition-opacity hover:opacity-90 lg:text-[1.65rem]"
+          aria-label="Exodus home"
         >
-          Ctrl+K
-        </button>
+          EXODUS
+        </Link>
       </div>
 
       <nav
-        aria-label="Reading desk"
-        className="flex gap-1 overflow-x-auto px-2 pb-3 lg:flex-1 lg:flex-col lg:overflow-visible lg:px-2 lg:pb-0"
+        aria-label="Archive terminal"
+        className="relative z-[1] flex min-h-0 flex-1 flex-col"
       >
-        {items.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => onSelect(id)}
-            aria-current={active === id ? "page" : undefined}
-            className={cn(
-              "flex min-h-11 shrink-0 items-center gap-2 px-3 py-2.5 font-display text-xs tracking-[0.02em] transition-colors duration-150 lg:min-h-0 lg:w-full lg:py-2",
-              active === id
-                ? "border-s-2 border-teal bg-cream text-ink"
-                : "border-s-2 border-transparent text-body hover:bg-teal-wash hover:text-ink",
-            )}
-          >
-            <Icon aria-hidden="true" className="size-4" />
-            {label}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => router.push("/wrapped")}
-          className="flex min-h-11 shrink-0 items-center gap-2 border-s-2 border-transparent px-3 py-2.5 font-display text-xs tracking-[0.02em] text-teal transition-colors duration-150 hover:bg-teal-wash lg:hidden"
-        >
-          <Sparkles aria-hidden="true" className="size-4" />
-          Wrapped
-        </button>
-        <button
-          type="button"
-          onClick={() => onSelect("export")}
-          className={cn(
-            "flex min-h-11 shrink-0 items-center gap-2 px-3 py-2.5 font-display text-xs tracking-[0.02em] transition-colors duration-150 lg:hidden",
-            active === "export"
-              ? "border-s-2 border-teal bg-cream text-ink"
-              : "border-s-2 border-transparent text-body hover:bg-teal-wash hover:text-ink",
-          )}
-        >
-          <Download aria-hidden="true" className="size-4" />
-          Export
-        </button>
-      </nav>
+        {/* Scrollable mid section — Wrapped/Export stay pinned below. */}
+        <div className="flex gap-0 overflow-x-auto px-2 pb-2 lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:px-0 lg:pb-0">
+          <div className="flex gap-0 lg:w-full lg:flex-col lg:border-t lg:border-dotted lg:border-white/15">
+            {items.map(({ id, label }) => (
+              <NavItem
+                key={id}
+                label={label}
+                active={active === id}
+                onClick={() => onSelect(id)}
+              />
+            ))}
+          </div>
+        </div>
 
-      <div className="hidden border-t border-ink/20 px-2 py-3 lg:block">
-        <button
-          type="button"
-          onClick={() => router.push("/wrapped")}
-          className="flex w-full items-center gap-2 px-3 py-2 font-display text-xs tracking-[0.02em] text-teal transition-colors duration-150 hover:bg-teal-wash"
-        >
-          <Sparkles aria-hidden="true" className="size-4" />
-          Wrapped
-        </button>
-        <button
-          type="button"
-          onClick={() => onSelect("export")}
-          className={cn(
-            "flex w-full items-center gap-2 px-3 py-2 font-display text-xs tracking-[0.02em] transition-colors duration-150",
-            active === "export"
-              ? "border-s-2 border-teal bg-cream text-ink"
-              : "border-s-2 border-transparent text-body hover:bg-teal-wash hover:text-ink",
-          )}
-        >
-          <Download aria-hidden="true" className="size-4" />
-          Export
-        </button>
-      </div>
+        <div className="mt-auto shrink-0 border-t border-dotted border-white/20 bg-rail px-2 pb-3 pt-1 lg:px-0 lg:pb-6 lg:pt-2">
+          <NavItem
+            label="Wrapped"
+            active={false}
+            onClick={() => router.push("/wrapped")}
+          />
+          <NavItem
+            label="Export"
+            active={active === "export"}
+            onClick={() => onSelect("export")}
+          />
+        </div>
+      </nav>
     </aside>
   );
 }

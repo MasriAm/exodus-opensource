@@ -5,7 +5,8 @@ import { Search } from "lucide-react";
 
 import { Mark } from "@/components/capsule/mark";
 import { StatePanel } from "@/components/state-panel";
-import { formatDateTime, formatNumber } from "@/lib/format";
+import { UserText } from "@/components/user-text";
+import { formatDateTime, pluralize } from "@/lib/format";
 
 export type SearchHit = {
   conversation: string;
@@ -156,19 +157,22 @@ export function SearchView({
         <section>
           <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-ink/20 pb-3">
             <h2 className="font-display text-[17px] font-bold text-ink">
-              {formatNumber(results.length)} matches
+              {pluralize(results.length, "match", "matches")}
             </h2>
             <p className="font-display text-[11px] uppercase tracking-[0.08em] text-body">
-              {formatNumber(grouped.size)} conversations
+              {pluralize(grouped.size, "conversation")}
             </p>
           </div>
           <div className="space-y-8">
             {[...grouped.entries()].map(([conversation, hits]) => (
               <section key={conversation}>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h3 dir="auto" className="font-display text-xs text-ink">
+                  <UserText
+                    as="h3"
+                    className="font-body text-sm font-semibold text-ink"
+                  >
                     {conversation}
-                  </h3>
+                  </UserText>
                   {onOpenConversation ? (
                     <button
                       type="button"
@@ -186,12 +190,9 @@ export function SearchView({
                       className="border-b border-ink/20 py-3 last:border-b-0"
                     >
                       <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <span
-                          dir="auto"
-                          className="font-display text-xs text-teal"
-                        >
+                        <UserText className="font-body text-xs font-semibold text-teal">
                           {hit.sender}
-                        </span>
+                        </UserText>
                         <time
                           dateTime={new Date(hit.sentAt).toISOString()}
                           className="font-display text-[11px] uppercase tracking-[0.08em] text-body"
@@ -201,7 +202,7 @@ export function SearchView({
                       </div>
                       <p
                         dir="auto"
-                        className="mt-2 whitespace-pre-wrap break-words font-body text-[15px] leading-7 text-ink"
+                        className="mt-2 whitespace-pre-wrap break-words font-body text-[15px] leading-7 text-ink [unicode-bidi:isolate]"
                       >
                         {highlightSnippet(
                           hit.snippet,

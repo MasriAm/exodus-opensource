@@ -72,7 +72,7 @@ CSP headers, DuckDB asset copy, and smoke tests remain in place.
 - Story extras: longest mutual follows, chat eras (longest conversation /
   most typed word / longest WhatsApp call), cringe comments, interests by
   year, username/bio history, and first image (lazy Blob URL).
-- Share card downloads a local PNG via `html-to-image`.
+- Share-card PNG export was removed; Wrapped is view-only in-session.
 - Numbers use `Intl.NumberFormat`.
 
 ### Phase 7 — WhatsApp parser + export-out

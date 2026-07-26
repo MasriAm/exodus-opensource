@@ -300,10 +300,17 @@ const WRAPPED_STOP_WORDS: readonly string[] = [
   ...ARABIC_STOPWORDS,
 ];
 
+/** Sample up to 80k message rows so word stats stay bounded on huge archives. */
 const WRAPPED_TOP_WORDS_SQL = `
-  WITH words AS (
+  WITH sampled AS (
+    SELECT text
+    FROM messages
+    WHERE text IS NOT NULL AND length(trim(text)) > 0
+    USING SAMPLE 80000 ROWS
+  ),
+  words AS (
     SELECT extracted.word
-    FROM messages,
+    FROM sampled,
     UNNEST(
       regexp_extract_all(
         lower(COALESCE(text, '')),
@@ -398,30 +405,17 @@ const WRAPPED_LONGEST_CALL_SQL = `
   LIMIT 1
 `;
 
+/** Prefer older comments for "cringe", but never hide the slide when comments exist. */
 const WRAPPED_CRINGE_COMMENTS_SQL = `
-  WITH bounds AS (
-    SELECT
-      CASE
-        WHEN MAX(sent_at) IS NULL THEN NULL
-        ELSE epoch(MAX(sent_at)) * 1000.0
-      END AS archive_end_ms
-    FROM messages
-  )
   SELECT
-    json_extract_string(events.payload, '$.text') AS text,
-    epoch(events.occurred_at) * 1000.0 AS occurred_at_ms
+    json_extract_string(payload, '$.text') AS text,
+    epoch(occurred_at) * 1000.0 AS occurred_at_ms
   FROM events
-  CROSS JOIN bounds
-  WHERE events.kind = 'comment'
-    AND bounds.archive_end_ms IS NOT NULL
-    AND epoch(events.occurred_at) * 1000.0
-      >= bounds.archive_end_ms - (4 * 365.25 * 86400000)
-    AND epoch(events.occurred_at) * 1000.0
-      < bounds.archive_end_ms - (3 * 365.25 * 86400000)
-    AND json_extract_string(events.payload, '$.text') IS NOT NULL
-    AND trim(json_extract_string(events.payload, '$.text')) <> ''
-  ORDER BY events.occurred_at ASC
-  LIMIT 8
+  WHERE kind = 'comment'
+    AND json_extract_string(payload, '$.text') IS NOT NULL
+    AND trim(json_extract_string(payload, '$.text')) <> ''
+  ORDER BY occurred_at ASC
+  LIMIT 12
 `;
 
 const WRAPPED_INTERESTS_SQL = `
@@ -679,12 +673,54 @@ export async function messagesPage(
     2_000,
   );
   const limit = boundedInteger(optionalNumber(params, "limit"), 100, 1, 500);
+  const offset = boundedInteger(optionalNumber(params, "offset"), 0, 0, 1_000_000);
   const before = optionalMessageCursor(params.before);
   const filter = messagesWhere(
     mergeFilters((params.filter as MessagesPageParams["filter"]) ?? {}, {
       conversation,
     }),
   );
+
+  const countRow = onlyRow(
+    await preparedRows(
+      connection,
+      `SELECT CAST(COUNT(*) AS DOUBLE) AS total FROM messages WHERE ${filter.clause}`,
+      filter.params,
+    ),
+    "messages page count",
+  );
+  const totalCount = readNumber(countRow, "total");
+
+  // Offset mode: chronological pages for the Archive Terminal pager.
+  if (params.offset !== undefined && params.offset !== null) {
+    const rows = await preparedRows(
+      connection,
+      `
+        SELECT
+          CAST(rowid AS DOUBLE) AS row_id,
+          platform,
+          conversation,
+          sender,
+          epoch(sent_at) * 1000.0 AS sent_at_ms,
+          text,
+          media_ref
+        FROM messages
+        WHERE ${filter.clause}
+        ORDER BY sent_at ASC, rowid ASC
+        LIMIT ? OFFSET ?
+      `,
+      [...filter.params, limit, offset],
+    );
+    return {
+      items: rows.map(messageItem),
+      hasMore: offset + rows.length < totalCount,
+      nextBefore: null,
+      totalCount,
+      offset,
+      limit,
+    };
+  }
+
   const sql = `
     SELECT
       CAST(rowid AS DOUBLE) AS row_id,
@@ -725,6 +761,9 @@ export async function messagesPage(
       hasMore && lastItem
         ? { sentAtMs: lastItem.sentAtMs, rowId: lastItem.rowId }
         : null,
+    totalCount,
+    offset: 0,
+    limit,
   };
 }
 
@@ -900,6 +939,17 @@ export async function mediaList(
       conversation,
     }),
   );
+  const whereSql = `${filter.clause}
+      AND (CAST(? AS VARCHAR) IS NULL OR kind = CAST(? AS VARCHAR))`;
+  const countParams = [...filter.params, kind, kind];
+  const totalRow = onlyRow(
+    await preparedRows(
+      connection,
+      `SELECT CAST(COUNT(*) AS DOUBLE) AS total_count FROM media WHERE ${whereSql}`,
+      countParams,
+    ),
+    "media list count",
+  );
   const sql = `
     SELECT
       CAST(rowid AS DOUBLE) AS row_id,
@@ -912,20 +962,18 @@ export async function mediaList(
       END AS taken_at_ms,
       conversation
     FROM media
-    WHERE ${filter.clause}
-      AND (CAST(? AS VARCHAR) IS NULL OR kind = CAST(? AS VARCHAR))
+    WHERE ${whereSql}
     ORDER BY taken_at DESC NULLS LAST, rowid DESC
     LIMIT ? OFFSET ?
   `;
   const rows = await preparedRows(connection, sql, [
-    ...filter.params,
-    kind,
-    kind,
+    ...countParams,
     limit,
     offset,
   ]);
   return {
     items: rows.map(mediaItem),
+    totalCount: readNumber(totalRow, "total_count"),
     limit,
     offset,
   };

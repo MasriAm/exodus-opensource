@@ -1,12 +1,16 @@
 import * as duckdb from "@duckdb/duckdb-wasm/dist/duckdb-browser";
 import * as Comlink from "comlink";
 
-import { normalizedRowSchema, type NormalizedRow } from "../lib/schema";
+import type { NormalizedRow } from "../lib/schema";
+import { MAX_PARSER_BATCH_SIZE } from "../parsers/batch";
 import { ZipEntryMap } from "../lib/zip";
 import {
-  createExportBlob,
+  createCsvExportBlob,
   createJsonExportBlob,
-  getExportSql,
+  createSpreadsheetExportBlob,
+  getExportCsvCopySql,
+  getExportSelectSql,
+  SPREADSHEET_ROW_LIMIT,
 } from "../lib/db/export";
 import {
   emptyRowCounts,
@@ -25,6 +29,7 @@ import {
   CLEAR_ARCHIVE_SQL,
   COMMIT_ARCHIVE_REPLACEMENT_SQL,
   INITIALIZATION_SQL,
+  POST_INGEST_INDEX_SQL,
   ROLLBACK_ARCHIVE_REPLACEMENT_SQL,
 } from "../lib/db/schema-sql";
 import type {
@@ -43,8 +48,6 @@ import type {
 import { detectParser } from "../parsers/registry";
 import type { ParserProgress } from "../parsers/types";
 
-const MAX_BATCH_SIZE = 2_000;
-
 interface DatabaseState {
   database: duckdb.AsyncDuckDB;
   connection: duckdb.AsyncDuckDBConnection;
@@ -60,11 +63,13 @@ class PublicWorkerError extends Error {}
 
 let databasePromise: Promise<DatabaseState> | null = null;
 let activeArchive: ActiveArchive | null = null;
-let exportFileSequence = 0;
 let operationTail: Promise<void> = Promise.resolve();
 
-const WORKER_OP_TIMEOUT_MS = 25_000;
+const WORKER_OP_TIMEOUT_MS = 45_000;
+const WORKER_HEAVY_TIMEOUT_MS = 90_000;
+const WORKER_EXPORT_TIMEOUT_MS = 5 * 60_000;
 const WORKER_INGEST_TIMEOUT_MS = 10 * 60_000;
+let exportFileSequence = 0;
 
 function withWorkerTimeout<Result>(
   operation: () => Promise<Result>,
@@ -286,7 +291,7 @@ async function ingestArchive(
     await parser.parse(
       candidate,
       async (batch) => {
-        await validateAndLoadBatch(database, batch, counts);
+        await loadNormalizedBatch(database, batch, counts);
         progress.report({
           stage: "loading",
           done: counts.messages + counts.media + counts.events,
@@ -309,6 +314,9 @@ async function ingestArchive(
     });
     await database.connection.query(COMMIT_ARCHIVE_REPLACEMENT_SQL);
     transactionOpen = false;
+    for (const sql of POST_INGEST_INDEX_SQL) {
+      await database.connection.query(sql);
+    }
   } catch (error: unknown) {
     console.error(`Import with parser ${parser.id} failed.`, error);
     if (transactionOpen) {
@@ -351,45 +359,33 @@ async function ingestArchive(
   };
 }
 
-async function validateAndLoadBatch(
+/**
+ * Parsers validate each row through ValidatedBatchEmitter before emit.
+ * The worker only enforces batch size and loads into DuckDB.
+ */
+async function loadNormalizedBatch(
   database: DatabaseState,
   batch: NormalizedRow[],
   counts: RowCounts,
 ): Promise<void> {
-  if (batch.length > MAX_BATCH_SIZE) {
+  if (batch.length > MAX_PARSER_BATCH_SIZE) {
     throw new Error(
-      `Parser batch contained ${batch.length} rows; maximum is ${MAX_BATCH_SIZE}.`,
+      `Parser batch contained ${batch.length} rows; maximum is ${MAX_PARSER_BATCH_SIZE}.`,
     );
   }
   if (batch.length === 0) {
     return;
   }
 
-  const validated: NormalizedRow[] = [];
-  for (const candidate of batch) {
-    const result = normalizedRowSchema.safeParse(candidate);
-    if (!result.success) {
-      const details = result.error.issues
-        .map((issue) => {
-          const path =
-            issue.path.length === 0 ? "<row>" : issue.path.map(String).join(".");
-          return `${path}: ${issue.message}`;
-        })
-        .join("; ");
-      throw new Error(`Normalized row validation failed: ${details}`);
-    }
-    validated.push(result.data);
-  }
-
-  const messages = validated.filter(
+  const messages = batch.filter(
     (row): row is Extract<NormalizedRow, { table: "messages" }> =>
       row.table === "messages",
   );
-  const media = validated.filter(
+  const media = batch.filter(
     (row): row is Extract<NormalizedRow, { table: "media" }> =>
       row.table === "media",
   );
-  const events = validated.filter(
+  const events = batch.filter(
     (row): row is Extract<NormalizedRow, { table: "events" }> =>
       row.table === "events",
   );
@@ -467,6 +463,39 @@ async function readMediaBlob(zipPath: string): Promise<Blob> {
   }
 }
 
+async function countTableRows(
+  database: DatabaseState,
+  table: ExportTable,
+): Promise<number> {
+  const result = await database.connection.query(
+    `SELECT CAST(COUNT(*) AS DOUBLE) AS n FROM ${table}`,
+  );
+  const rows = asSqlRows(result.toArray());
+  const value = rows[0]?.n;
+  return typeof value === "number" ? value : Number(value ?? 0);
+}
+
+async function exportCsvViaCopy(
+  database: DatabaseState,
+  table: ExportTable,
+): Promise<Blob> {
+  exportFileSequence += 1;
+  const fileName = `export-${exportFileSequence}-${table}.csv`;
+  await database.database.registerEmptyFileBuffer(fileName);
+  try {
+    await database.connection.query(getExportCsvCopySql(table, fileName));
+    await database.database.flushFiles();
+    const bytes = await database.database.copyFileToBuffer(fileName);
+    return createCsvExportBlob(bytes);
+  } finally {
+    try {
+      await database.database.dropFile(fileName);
+    } catch (dropError: unknown) {
+      console.error("A CSV export virtual file could not be removed.", dropError);
+    }
+  }
+}
+
 async function exportTable(
   table: ExportTable,
   format: ExportFormat,
@@ -475,45 +504,40 @@ async function exportTable(
     throw new PublicWorkerError("Choose a supported table and export format.");
   }
   const database = await getDatabase();
-  exportFileSequence += 1;
-  const fileName = `export-${exportFileSequence}-${table}.${format}`;
-  if (format === "json") {
-    try {
-      const result = await database.connection.query(
-        getExportSql(table, format, fileName),
-      );
-      return createJsonExportBlob(asSqlRows(result.toArray()));
-    } catch (error: unknown) {
-      console.error(`Exporting ${table} as ${format} failed.`, error);
-      throw new PublicWorkerError(
-        "The private database could not create that export.",
-      );
-    }
-  }
-
-  await database.database.registerEmptyFileBuffer(fileName);
-  let exportFailed = false;
   try {
-    await database.connection.query(getExportSql(table, format, fileName));
-    await database.database.flushFiles();
-    const bytes = await database.database.copyFileToBuffer(fileName);
-    return createExportBlob(bytes, format);
+    if (format === "csv") {
+      return await exportCsvViaCopy(database, table);
+    }
+    const rowCount = await countTableRows(database, table);
+    if (format === "xlsx" && rowCount > SPREADSHEET_ROW_LIMIT) {
+      // Memory-safe fallback — still a usable download.
+      return await exportCsvViaCopy(database, table);
+    }
+    const result = await database.connection.query(getExportSelectSql(table));
+    const rows = asSqlRows(result.toArray());
+    if (format === "json") {
+      return createJsonExportBlob(rows);
+    }
+    return await createSpreadsheetExportBlob(table, rows);
   } catch (error: unknown) {
-    exportFailed = true;
     console.error(`Exporting ${table} as ${format} failed.`, error);
     throw new PublicWorkerError(
       "The private database could not create that export.",
     );
-  } finally {
-    try {
-      await database.database.dropFile(fileName);
-    } catch (dropError: unknown) {
-      if (!exportFailed) {
-        throw dropError;
-      }
-      console.error("A failed export virtual file could not be removed.", dropError);
-    }
   }
+}
+
+async function ping(): Promise<true> {
+  const database = await getDatabase();
+  await database.connection.query("SELECT 1");
+  return true;
+}
+
+function heavyQueryTimeout(name: QueryName): number {
+  if (name === "wrappedStats" || name === "personDetail" || name === "footprint") {
+    return WORKER_HEAVY_TIMEOUT_MS;
+  }
+  return WORKER_OP_TIMEOUT_MS;
 }
 
 const api: IngestApi = {
@@ -525,6 +549,7 @@ const api: IngestApi = {
   query: <Name extends QueryName>(name: Name, ...args: QueryArgs<Name>) =>
     runExclusive(() => runQuery(name, args[0] as QueryParamsByName[Name]), {
       label: `query:${String(name)}`,
+      timeoutMs: heavyQueryTimeout(name),
     }),
   readMediaBlob: (zipPath) =>
     runExclusive(() => readMediaBlob(zipPath), {
@@ -533,6 +558,12 @@ const api: IngestApi = {
   exportTable: (table, format) =>
     runExclusive(() => exportTable(table, format), {
       label: `exportTable:${table}`,
+      timeoutMs: WORKER_EXPORT_TIMEOUT_MS,
+    }),
+  ping: () =>
+    runExclusive(() => ping(), {
+      label: "ping",
+      timeoutMs: 8_000,
     }),
 };
 

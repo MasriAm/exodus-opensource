@@ -21,7 +21,7 @@ export const QUERY_NAMES = [
 export type QueryName = (typeof QUERY_NAMES)[number];
 
 export type ExportTable = "messages" | "media" | "events";
-export type ExportFormat = "csv" | "json";
+export type ExportFormat = "xlsx" | "csv" | "json";
 export type MediaKind = "image" | "video" | "audio" | "other";
 
 export interface RowCounts {
@@ -66,6 +66,8 @@ export interface MessageCursor {
 export interface MessagesPageParams {
   conversation: string;
   before?: MessageCursor | null;
+  /** Chronological page offset (0-based). When set, cursor `before` is ignored. */
+  offset?: number;
   limit?: number;
   filter?: {
     fromMs?: number | null;
@@ -88,6 +90,9 @@ export interface MessagesPageResult {
   items: MessageItem[];
   nextBefore: MessageCursor | null;
   hasMore: boolean;
+  totalCount: number;
+  offset: number;
+  limit: number;
 }
 
 export interface CountsResult extends RowCounts {
@@ -180,6 +185,7 @@ export interface MediaItem {
 
 export interface MediaListResult {
   items: MediaItem[];
+  totalCount: number;
   limit: number;
   offset: number;
 }
@@ -259,6 +265,20 @@ export interface PersonDetailParams {
   };
 }
 
+export interface PersonDynamics {
+  /** First message after a ≥4h gap (or thread open), you vs them. */
+  conversationStarts: { you: number; them: number };
+  /** Median reply latency in ms when answering the other side. */
+  medianReplyMs: { you: number | null; them: number | null };
+  avgMessageLength: { you: number; them: number };
+  yearlyVolume: Array<{ year: number; messageCount: number }>;
+  busiestDay: { dayMs: number; messageCount: number } | null;
+  topWords: Array<{ word: string; count: number }>;
+  /** Messages that attach media (media_ref), you vs them. */
+  mediaSplit: { you: number; them: number };
+  themSender: string | null;
+}
+
 export interface PersonDetailResult {
   conversation: string;
   platform: string | null;
@@ -281,6 +301,7 @@ export interface PersonDetailResult {
   longestStreakDays: number;
   longestSilenceDays: number;
   media: MediaItem[];
+  dynamics: PersonDynamics;
 }
 
 export interface MessageHeatmapParams {
@@ -477,7 +498,7 @@ export interface WrappedStatsResult {
 export interface ExportFormatMetadata {
   format: ExportFormat;
   mimeType: string;
-  extension: ExportFormat;
+  extension: "xlsx" | "csv" | "json";
 }
 
 export interface ExportTableMetadata {
@@ -577,4 +598,6 @@ export interface IngestApi {
   ): Promise<QueryResultByName[Name]>;
   readMediaBlob(zipPath: string): Promise<Blob>;
   exportTable(table: ExportTable, format: ExportFormat): Promise<Blob>;
+  /** Lightweight liveness check for stall recovery. */
+  ping(): Promise<true>;
 }

@@ -45,7 +45,7 @@ Install with npm (latest stable of each; the installed version's types are autho
 - `comlink` — worker RPC
 - `zod` — boundary validation
 - `recharts` — charts
-- `html-to-image` — Wrapped share card PNG
+- `write-excel-file` — formatted spreadsheet export (xlsx)
 - dev: `vitest`
 - shadcn/ui via `npx shadcn@latest init` (then `add` components as needed)
 
@@ -194,7 +194,7 @@ Gate for every phase: `npm run typecheck && npm run test && npm run build` all g
 
 **Phase 5 — Search + media + activity.** `search(term)` query using case-insensitive `LIKE` across `messages.text` (grouped by conversation, with snippets); media gallery reading blobs lazily via `readMediaBlob` with an IntersectionObserver and `revokeObjectURL` on unmount; Activity view charting `events` over time (recharts). **Accept:** searching an Arabic word and an English word from the fixture both return the manifest-known hits; scrolling the gallery keeps memory flat (verify in DevTools, note the observation in PROGRESS.md); no revoke leaks (audit the component).
 
-**Phase 6 — Wrapped + share card.** Named queries + a `/wrapped` sequence for: total messages; total media; active date range; top 5 contacts; messages-by-hour histogram (call out the 02:00–04:00 peak as "your 3am era"); busiest single day; top 20 words (tokenizer in `lib/text.ts`: split on whitespace/punctuation, lowercase Latin, filter a committed English + Arabic stopword list, min length 2); first message ever (text, date, conversation); longest daily-activity streak. Share card: one styled card of 5 headline stats → `html-to-image` → PNG download. All numbers formatted with `Intl.NumberFormat`. **Accept:** every stat on the fixture matches values independently computable from `manifest.json` (add tests for word-count and histogram queries at the SQL layer); PNG downloads and contains no data fetched from anywhere.
+**Phase 6 — Wrapped.** Named queries + a `/wrapped` sequence for: total messages; total media; active date range; top 5 contacts; messages-by-hour histogram (call out the 02:00–04:00 peak as "your 3am era"); busiest single day; top 20 words (tokenizer in `lib/text.ts`: split on whitespace/punctuation, lowercase Latin, filter a committed English + Arabic stopword list, min length 2); first message ever (text, date, conversation); longest daily-activity streak. All numbers formatted with `Intl.NumberFormat`. **Accept:** every stat on the fixture matches values independently computable from `manifest.json` (add tests for word-count and histogram queries at the SQL layer).
 
 **Phase 7 — WhatsApp parser + export-out.** Section 6.3 + tests (both formats, continuations, media-omitted, RTL marks). `exportTable` producing CSV and JSON blobs via DuckDB `COPY ... TO` into a registered virtual file read back as a buffer (confirm the copy/read-back API names in the installed types), wired to an Export view with download buttons. `CONTRIBUTING.md`: "Write a parser in 3 steps" referencing `parsers/types.ts`. **Accept:** WhatsApp fixture ingests with manifest-correct counts; exported CSV of `messages` re-opens in a spreadsheet with correct Arabic (UTF-8 BOM included).
 

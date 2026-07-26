@@ -338,18 +338,44 @@ async function emitPendingRecord(
   }
 }
 
-async function parseTranscript(
-  text: string,
+async function* iterateBlobLines(blob: Blob): AsyncGenerator<string> {
+  const reader = blob.stream().pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  let sawBom = false;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    let chunk = value;
+    if (!sawBom) {
+      sawBom = true;
+      chunk = chunk.replace(/^\uFEFF/, "");
+    }
+    buffer += chunk;
+    const parts = buffer.split(/\r\n|\n|\r/);
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      yield part;
+    }
+  }
+  if (buffer.length > 0) {
+    yield buffer;
+  }
+}
+
+async function parseTranscriptLines(
+  lines: AsyncIterable<string>,
   transcriptPath: string,
   batch: ValidatedBatchEmitter,
 ): Promise<void> {
   const conversation = entryBasename(transcriptPath);
-  const lines = text.replace(/^\uFEFF/, "").split(/\r\n|\n|\r/);
   let pending: PendingRecord | null = null;
   let ordinal = 0;
+  let index = 0;
 
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = stripDirectionalMarks(lines[index]);
+  for await (const rawLine of lines) {
+    const line = stripDirectionalMarks(rawLine);
     const start = parseRecordStart(line);
 
     if (start !== null) {
@@ -382,11 +408,13 @@ async function parseTranscript(
           text: messageText,
         };
       }
+      index += 1;
       continue;
     }
 
     if (pending === null) {
       if (line.trim() === "") {
+        index += 1;
         continue;
       }
       throw new Error(
@@ -397,6 +425,7 @@ async function parseTranscript(
     }
 
     pending.text += `\n${line}`;
+    index += 1;
   }
 
   if (pending !== null) {
@@ -407,6 +436,21 @@ async function parseTranscript(
       batch,
     );
   }
+}
+
+/** @deprecated Prefer parseTranscriptLines — kept for unit tests that pass strings. */
+async function parseTranscript(
+  text: string,
+  transcriptPath: string,
+  batch: ValidatedBatchEmitter,
+): Promise<void> {
+  const lines = text.replace(/^\uFEFF/, "").split(/\r\n|\n|\r/);
+  async function* asAsync() {
+    for (const line of lines) {
+      yield line;
+    }
+  }
+  await parseTranscriptLines(asAsync(), transcriptPath, batch);
 }
 
 export const whatsappParser: DataParser = {
@@ -426,16 +470,26 @@ export const whatsappParser: DataParser = {
   async parse(entries, emit, progress) {
     const batch = new ValidatedBatchEmitter(emit, progress);
     const transcriptPaths: string[] = [];
+    const MAX_TRANSCRIPT_BYTES = 96 * 1024 * 1024;
 
     progress({ done: 0, label: "Finding WhatsApp transcripts…" });
     for (const path of entries
       .paths()
       .filter(isTextPath)
       .sort((left, right) => left.localeCompare(right, "en"))) {
-      const text = await entries.readText(path);
-      if (recognizedTranscriptPath(path) || looksLikeTranscript(text)) {
+      const size = entries.entrySize(path);
+      if (size !== null && size > MAX_TRANSCRIPT_BYTES) {
+        throw new Error(
+          `WhatsApp transcript is too large to import in the browser (${size} bytes): ${path}`,
+        );
+      }
+      const blob = await entries.readBlob(path, {
+        maxBytes: MAX_TRANSCRIPT_BYTES,
+      });
+      const peek = await blob.slice(0, 65_536).text();
+      if (recognizedTranscriptPath(path) || looksLikeTranscript(peek)) {
         transcriptPaths.push(path);
-        await parseTranscript(text, path, batch);
+        await parseTranscriptLines(iterateBlobLines(blob), path, batch);
         await batch.flush("Parsing WhatsApp messages…");
       }
     }

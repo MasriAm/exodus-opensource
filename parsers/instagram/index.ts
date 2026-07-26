@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+import {
+  isInstagramSystemMessage,
+  stripInstagramFolderId,
+} from "../../lib/instagram-labels";
 import { fixMojibake } from "../../lib/text";
 import { ValidatedBatchEmitter } from "../batch";
 import { parseJson, stringifyJson, validateJson } from "../json";
@@ -11,6 +15,23 @@ import {
   resolveReferencedPath,
 } from "../paths";
 import type { DataParser } from "../types";
+import type { ZipEntryMap } from "../../lib/zip";
+
+/** Single JSON files larger than this are refused (browser memory guard). */
+const MAX_JSON_ENTRY_BYTES = 48 * 1024 * 1024;
+
+async function readJsonEntry(entries: ZipEntryMap, path: string): Promise<unknown> {
+  const size = entries.entrySize(path);
+  if (size !== null && size > MAX_JSON_ENTRY_BYTES) {
+    throw new Error(
+      `Instagram JSON entry is too large to import in the browser (${size} bytes): ${path}`,
+    );
+  }
+  return parseJson(
+    await entries.readText(path, { maxBytes: MAX_JSON_ENTRY_BYTES }),
+    path,
+  );
+}
 
 const attachmentSchema = z.object({
   uri: z.string().min(1),
@@ -158,7 +179,9 @@ function messageEntryInfo(path: string): MessageEntryInfo | null {
 
   return {
     path,
-    conversation: fixMojibake(segments[messagesIndex + 2]),
+    conversation: stripInstagramFolderId(
+      fixMojibake(segments[messagesIndex + 2]),
+    ),
     page: Number.parseInt(match[1], 10),
   };
 }
@@ -369,9 +392,11 @@ async function parseMessages(
   batch: ValidatedBatchEmitter,
 ): Promise<void> {
   for (const entry of messageEntries) {
-    const raw = parseJson(await entries.readText(entry.path), entry.path);
+    const raw = await readJsonEntry(entries, entry.path);
     const repaired = repairInstagramStrings(raw);
     const thread = validateJson(messageThreadSchema, repaired, entry.path);
+    // Folder slug is `username_numericId` — keep the handle, drop the id.
+    const conversation = stripInstagramFolderId(entry.conversation);
 
     for (const message of thread.messages) {
       const attachments = collectAttachments(message).map(
@@ -381,15 +406,21 @@ async function parseMessages(
           zipPath: resolveReferencedPath(paths, attachment.uri),
         }),
       );
+      const systemText = isInstagramSystemMessage(message.content ?? null);
+      // Skip pure Instagram log lines with no media (likes, reacts, "sent an attachment" without files).
+      if (systemText && attachments.length === 0) {
+        continue;
+      }
 
       await batch.add(
         {
           table: "messages",
           platform: "instagram",
-          conversation: entry.conversation,
-          sender: message.sender_name,
+          conversation,
+          sender: stripInstagramFolderId(message.sender_name),
           sent_at_ms: message.timestamp_ms,
-          text: message.content ?? null,
+          // Keep media rows; drop system placeholder copy so it doesn't pollute word stats.
+          text: systemText ? null : (message.content ?? null),
           media_ref: attachments[0]?.zipPath ?? null,
         },
         entry.path,
@@ -410,7 +441,7 @@ async function parseMessages(
                     attachment.creation_timestamp,
                     entry.path,
                   ),
-            conversation: entry.conversation,
+            conversation,
           },
           entry.path,
           "Parsing Instagram media…",
@@ -428,7 +459,7 @@ async function parseConnections(
   batch: ValidatedBatchEmitter,
 ): Promise<void> {
   for (const entry of connectionEntries) {
-    const raw = parseJson(await entries.readText(entry.path), entry.path);
+    const raw = await readJsonEntry(entries, entry.path);
     const repaired = repairInstagramStrings(raw);
     const connections = extractConnectionEntries(repaired, entry.path);
 
@@ -468,7 +499,7 @@ async function parsePersonalInformation(
   batch: ValidatedBatchEmitter,
 ): Promise<void> {
   for (const path of personalInformationPaths) {
-    const raw = parseJson(await entries.readText(path), path);
+    const raw = await readJsonEntry(entries, path);
     const repaired = repairInstagramStrings(raw);
     const timedRecords: TimedPersonalRecord[] = [];
     findTimedPersonalRecords(repaired, "$", timedRecords);
@@ -504,7 +535,7 @@ async function parseComments(
 ): Promise<void> {
   for (const path of commentPaths) {
     try {
-      const raw = parseJson(await entries.readText(path), path);
+      const raw = await readJsonEntry(entries, path);
       const repaired = repairInstagramStrings(raw);
       const comments = extractConnectionEntries(repaired, path);
 
@@ -554,7 +585,7 @@ async function parseAdsInterests(
 ): Promise<void> {
   for (const path of interestPaths) {
     try {
-      const raw = parseJson(await entries.readText(path), path);
+      const raw = await readJsonEntry(entries, path);
       const repaired = repairInstagramStrings(raw);
       const interests = extractConnectionEntries(repaired, path);
 
@@ -598,7 +629,7 @@ async function parseProfileChanges(
 ): Promise<void> {
   for (const path of profileChangePaths) {
     try {
-      const raw = parseJson(await entries.readText(path), path);
+      const raw = await readJsonEntry(entries, path);
       const repaired = repairInstagramStrings(raw);
       const collections = isRecord(repaired)
         ? Object.values(repaired)

@@ -12,6 +12,7 @@ import {
 } from "@/components/archive-session";
 import { IngestLoadingScene } from "@/components/ingest-loading-scene";
 import { StatePanel } from "@/components/state-panel";
+import type { IngestProgress } from "@/lib/db/types";
 import { COUNTS_TIMEOUT_MS, withTimeout } from "@/lib/query-timeout";
 
 const SESSION_ENDED_COPY =
@@ -42,6 +43,42 @@ function hadLiveSessionMarker(): boolean {
   } catch {
     return false;
   }
+}
+
+const STAGE_PERCENT = {
+  initializing: 4,
+  opening: 12,
+  detecting: 20,
+  parsing: 45,
+  loading: 75,
+  finalizing: 94,
+} as const;
+
+function IngestingGateScene({
+  progress,
+}: {
+  progress: IngestProgress | null;
+}) {
+  const [percent, setPercent] = useState(2);
+
+  useEffect(() => {
+    if (!progress) {
+      return;
+    }
+    const stageFloor = STAGE_PERCENT[progress.stage];
+    const measured =
+      progress.total !== null && progress.total > 0
+        ? Math.round((progress.done / progress.total) * 100)
+        : stageFloor;
+    const blended = Math.max(stageFloor, measured);
+    setPercent((previous) => Math.min(98, Math.max(previous, blended, 2)));
+  }, [progress]);
+
+  return (
+    <main className="min-h-screen bg-paper">
+      <IngestLoadingScene progress={progress} progressPercent={percent} />
+    </main>
+  );
 }
 
 /**
@@ -132,30 +169,7 @@ export function SessionGate({
   }
 
   if (phase === "ingesting") {
-    const STAGE_PERCENT = {
-      initializing: 4,
-      opening: 12,
-      detecting: 20,
-      parsing: 45,
-      loading: 75,
-      finalizing: 94,
-    } as const;
-    const percent =
-      ingestProgress &&
-      ingestProgress.total !== null &&
-      ingestProgress.total > 0
-        ? Math.round((ingestProgress.done / ingestProgress.total) * 100)
-        : ingestProgress
-          ? STAGE_PERCENT[ingestProgress.stage]
-          : undefined;
-    return (
-      <main className="min-h-screen bg-paper">
-        <IngestLoadingScene
-          progress={ingestProgress}
-          progressPercent={percent}
-        />
-      </main>
-    );
+    return <IngestingGateScene progress={ingestProgress} />;
   }
 
   if (phase === "redirecting") {

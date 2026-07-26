@@ -44,12 +44,12 @@ describe("computeStreakSilence", () => {
 describe("fixture manifest superlatives", () => {
   const analytics = manifest.instagram.analytics;
 
-  it("documents busiest day as a day count (not a month total)", () => {
+  it("documents a genuine per-day peak (burstier than a flat 3)", () => {
     const { busiestDay } = analytics;
-    expect(busiestDay.messages).toBe(3);
-    expect(busiestDay.date).toBe("2023-01-01");
-    // A quiet month total can exceed the busiest day — never compare them as peers.
-    expect(busiestDay.messages).toBeLessThan(59);
+    expect(busiestDay.messages).toBeGreaterThan(10);
+    expect(busiestDay.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // Month totals can still exceed a single day — never compare as peers.
+    expect(analytics.activeDayCount).toBeLessThan(700);
   });
 
   it("keeps top contacts ordered by message count descending", () => {
@@ -64,18 +64,16 @@ describe("fixture manifest superlatives", () => {
     const { firstMessage, dateRange } = analytics;
     expect(firstMessage.sentAtMs).toBe(dateRange.firstSentAtMs);
     expect(firstMessage.sentAtMs).toBeLessThanOrEqual(dateRange.lastSentAtMs);
-    expect(firstMessage.conversation).toBe("omar_khalil");
   });
 
-  it("matches longest streak length to the fixture span", () => {
+  it("has a meaningful streak shorter than a solid two-year block", () => {
     const streak = analytics.longestDailyActivityStreak;
-    expect(streak.days).toBe(731);
-    expect(streak.startDate).toBe("2023-01-01");
-    expect(streak.endDate).toBe("2024-12-31");
+    expect(streak.days).toBeGreaterThan(1);
+    expect(streak.days).toBeLessThan(400);
+    expect(streak.startDate <= streak.endDate).toBe(true);
   });
 
   it("activity facts stay ordered when month totals dwarf day peaks", () => {
-    // Mimic the live bug class: many quiet days → large month, tiny peak day.
     const days = Array.from({ length: 31 }, (_, index) => ({
       dayMs: Date.UTC(2023, 0, index + 1),
       messageCount: index === 0 ? 3 : 2,

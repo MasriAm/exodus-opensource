@@ -1,11 +1,25 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FileQuestion, ImageIcon, LoaderCircle, X } from "lucide-react";
+import {
+  FileQuestion,
+  ImageIcon,
+  LoaderCircle,
+  Mic,
+  Video,
+  X,
+} from "lucide-react";
 
+import { ArchivePanel } from "@/components/dashboard/archive-panel";
+import { PageControl } from "@/components/dashboard/page-control";
 import { VintagePhoto } from "@/components/capsule/vintage-photo";
 import { StatePanel } from "@/components/state-panel";
-import { formatDate } from "@/lib/format";
+import { UserText } from "@/components/user-text";
+import { stripInstagramFolderId } from "@/lib/instagram-labels";
+import { formatDate, pluralize } from "@/lib/format";
+import { cn } from "@/lib/utils";
+
+type MediaBucket = "image" | "audio" | "video" | "other";
 
 export type MediaItem = {
   zipPath: string;
@@ -20,6 +34,16 @@ type LazyMediaProps = {
   onOpen?: (url: string, item: MediaItem) => void;
 };
 
+let mediaChain: Promise<unknown> = Promise.resolve();
+function enqueueMedia<T>(work: () => Promise<T>): Promise<T> {
+  const run = mediaChain.then(work, work);
+  mediaChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
   const containerRef = useRef<HTMLElement>(null);
   const objectUrlRef = useRef<string | null>(null);
@@ -27,6 +51,7 @@ function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const omittedFromExport = item.zipPath.startsWith("omitted://");
+  const fileName = item.zipPath.split("/").at(-1) ?? "media";
 
   useEffect(() => {
     const node = containerRef.current;
@@ -40,24 +65,15 @@ function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        // Background tabs often report everything as non-intersecting;
-        // don't revoke/reload blobs while the tab is hidden — that floods
-        // the exclusive worker queue and can wedge DuckDB after freezes.
         if (typeof document !== "undefined" && document.hidden) {
           return;
         }
-        const inRange = entries.some((entry) => entry.isIntersecting);
-        setVisible(inRange);
-        if (!inRange) {
-          const objectUrl = objectUrlRef.current;
-          if (objectUrl) {
-            URL.revokeObjectURL(objectUrl);
-            objectUrlRef.current = null;
-          }
-          setUrl(null);
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
         }
       },
-      { rootMargin: "300px" },
+      { rootMargin: "400px" },
     );
     observer.observe(node);
     return () => observer.disconnect();
@@ -71,7 +87,7 @@ function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
     let active = true;
     let objectUrl: string | null = null;
     setError(false);
-    void readBlob(item.zipPath)
+    void enqueueMedia(() => readBlob(item.zipPath))
       .then((blob) => {
         if (!active) {
           return;
@@ -96,45 +112,51 @@ function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
     };
   }, [item.zipPath, omittedFromExport, readBlob, visible]);
 
-  const label = item.conversation
-    ? `Media shared in ${item.conversation}`
+  const conversationLabel = item.conversation
+    ? stripInstagramFolderId(item.conversation)
+    : null;
+  const label = conversationLabel
+    ? `Media shared in ${conversationLabel}`
     : "Archive media";
+  const isHeic = /\.heic$/i.test(fileName);
 
   return (
-    <article ref={containerRef} className="group">
+    <article ref={containerRef} className="group min-w-0">
       {item.kind === "image" && url && !error && !omittedFromExport ? (
         <button
           type="button"
-          className="w-full text-start"
+          className="w-full cursor-pointer text-start transition-opacity hover:opacity-90"
           onClick={() => onOpen?.(url, item)}
         >
-          <div className="rounded-[2px] bg-cream p-1 shadow-[0_2px_8px_rgba(0,0,0,0.12)]">
+          <div className="overflow-hidden border border-ink bg-receipt p-1.5 shadow-panel transition-[box-shadow,transform] group-hover:shadow-press">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={url}
               alt={label}
               loading="lazy"
-              className="aspect-square w-full rounded-[1px] object-cover"
+              className="aspect-square w-full object-cover"
             />
           </div>
         </button>
       ) : (
-        <div className="overflow-hidden border-strong bg-cream">
-          <div className="grid aspect-square place-items-center bg-paper/60">
+        <div className="overflow-hidden border-2 border-ink bg-cream shadow-panel">
+          <div className="grid aspect-square place-items-center bg-paper/60 px-3">
             {omittedFromExport ? (
-              <div className="px-5 text-center font-body text-sm text-body">
+              <div className="text-center font-body text-sm text-ink/75">
                 <ImageIcon aria-hidden="true" className="mx-auto mb-2 size-6" />
-                Media was omitted from the WhatsApp export.
+                Omitted from export
               </div>
             ) : !visible || (!url && !error) ? (
               <LoaderCircle
                 aria-label="Loading media"
-                className="size-5 animate-spin text-body motion-reduce:animate-none"
+                className="size-5 animate-spin text-ink/60 motion-reduce:animate-none"
               />
-            ) : error ? (
-              <div className="px-5 text-center font-body text-sm text-body">
+            ) : error || isHeic ? (
+              <div className="text-center font-body text-sm text-ink/75">
                 <FileQuestion aria-hidden="true" className="mx-auto mb-2 size-6" />
-                This media entry could not be opened.
+                <span dir="auto" className="mt-1 block [unicode-bidi:isolate]">
+                  <bdi>{isHeic ? "HEIC — not previewable here" : fileName}</bdi>
+                </span>
               </div>
             ) : item.kind === "video" ? (
               <video
@@ -142,19 +164,23 @@ function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
                 controls
                 preload="metadata"
                 aria-label={label}
-                className="size-full bg-ink object-contain"
+                className="max-h-full max-w-full bg-ink object-contain"
               />
             ) : item.kind === "audio" ? (
-              <audio
-                src={url ?? undefined}
-                controls
-                preload="metadata"
-                aria-label={label}
-              />
+              <div className="flex w-full flex-col items-center gap-3 px-2">
+                <Mic aria-hidden="true" className="size-6 text-teal" />
+                <audio
+                  src={url ?? undefined}
+                  controls
+                  preload="metadata"
+                  aria-label={label}
+                  className="w-full max-w-full"
+                />
+              </div>
             ) : (
               <a
                 href={url ?? undefined}
-                download={item.zipPath.split("/").at(-1)}
+                download={fileName}
                 className="font-display text-sm font-bold text-teal underline"
               >
                 Open attachment
@@ -163,16 +189,12 @@ function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
           </div>
         </div>
       )}
-      <div className="mt-2 px-1">
-        <p dir="auto" className="truncate font-display text-sm font-bold text-ink">
-          {item.conversation ??
-            (omittedFromExport
-              ? "Omitted media"
-              : item.zipPath.split("/").at(-1))}
-        </p>
-        <p className="meta-caps mt-1">
-          {item.takenAt ? formatDate(item.takenAt) : "Date unavailable"} ·{" "}
-          {item.kind}
+      <div className="mt-2 min-w-0 px-0.5">
+        <UserText className="block truncate font-body text-sm font-semibold text-ink">
+          {conversationLabel ?? (omittedFromExport ? "Omitted media" : fileName)}
+        </UserText>
+        <p className="mt-1 font-display text-[10px] font-bold uppercase tracking-[0.08em] text-ink/65">
+          {item.takenAt ? formatDate(item.takenAt) : "Date unavailable"}
         </p>
       </div>
     </article>
@@ -181,21 +203,68 @@ function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
 
 type MediaViewProps = {
   items: MediaItem[];
+  totalCount: number;
+  page: number;
+  totalPages: number;
   loading: boolean;
   error: string | null;
+  kind: MediaBucket;
+  onChangeKind: (kind: MediaBucket) => void;
   readBlob: (zipPath: string) => Promise<Blob>;
+  onChangePage: (page: number) => void;
 };
+
+const BUCKETS: ReadonlyArray<{
+  id: MediaBucket;
+  label: string;
+  icon: typeof ImageIcon;
+}> = [
+  { id: "image", label: "Images", icon: ImageIcon },
+  { id: "audio", label: "Voice notes", icon: Mic },
+  { id: "video", label: "Video", icon: Video },
+  { id: "other", label: "Other", icon: FileQuestion },
+];
 
 export function MediaView({
   items,
+  totalCount,
+  page,
+  totalPages,
   loading,
   error,
+  kind,
+  onChangeKind,
   readBlob,
+  onChangePage,
 }: MediaViewProps) {
   const [lightbox, setLightbox] = useState<{
     url: string;
     item: MediaItem;
   } | null>(null);
+
+  const closeLightbox = () => {
+    setLightbox((current) => {
+      if (current) {
+        URL.revokeObjectURL(current.url);
+      }
+      return null;
+    });
+  };
+
+  const openLightbox = async (sourceUrl: string, item: MediaItem) => {
+    try {
+      const blob = await (await fetch(sourceUrl)).blob();
+      const owned = URL.createObjectURL(blob);
+      setLightbox((current) => {
+        if (current) {
+          URL.revokeObjectURL(current.url);
+        }
+        return { url: owned, item };
+      });
+    } catch {
+      setLightbox({ url: sourceUrl, item });
+    }
+  };
 
   if (error) {
     return (
@@ -215,7 +284,7 @@ export function MediaView({
       />
     );
   }
-  if (items.length === 0) {
+  if (totalCount === 0) {
     return (
       <StatePanel
         icon={ImageIcon}
@@ -225,24 +294,77 @@ export function MediaView({
     );
   }
 
+  const bucketLabel =
+    BUCKETS.find((entry) => entry.id === kind)?.label ?? "Media";
+
   return (
-    <section>
-      <div className="mb-5">
-        <p className="font-body text-[15px] leading-7 text-body">
-          Photographs and attachments from the export — opened only as they
-          enter view, never uploaded.
-        </p>
+    <div className="space-y-4">
+      <div
+        className="flex flex-wrap gap-2"
+        role="tablist"
+        aria-label="Media type"
+      >
+        {BUCKETS.map((entry) => {
+          const Icon = entry.icon;
+          const active = kind === entry.id;
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onChangeKind(entry.id)}
+              className={cn(
+                "inline-flex items-center gap-2 border-2 px-3 py-2 font-display text-xs font-bold uppercase tracking-[0.06em] transition-colors",
+                active
+                  ? "border-teal bg-teal-wash text-teal"
+                  : "border-ink/30 bg-cream text-ink/75 hover:border-ink hover:bg-receipt",
+              )}
+            >
+              <Icon aria-hidden="true" className="size-3.5" />
+              {entry.label}
+            </button>
+          );
+        })}
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {items.map((item) => (
-          <LazyMedia
-            key={item.zipPath}
-            item={item}
-            readBlob={readBlob}
-            onOpen={(url, mediaItem) => setLightbox({ url, item: mediaItem })}
-          />
-        ))}
-      </div>
+
+      <ArchivePanel
+        title={`${bucketLabel} // ${pluralize(totalCount, "file")}`}
+        subtitle="Images, voice notes, and video stay in separate boxes so tiles don’t collide. Opened on demand from your ZIP."
+        bodyClassName="!p-0"
+      >
+        {items.length === 0 ? (
+          <p className="p-5 font-body text-sm text-ink/75">
+            No {kind === "audio" ? "voice notes" : kind} match these filters.
+          </p>
+        ) : (
+          <div
+            className={cn(
+              "grid gap-4 p-4",
+              kind === "audio"
+                ? "grid-cols-1 sm:grid-cols-2"
+                : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4",
+            )}
+          >
+            {items.map((item) => (
+              <LazyMedia
+                key={`${item.zipPath}-${item.kind}`}
+                item={item}
+                readBlob={readBlob}
+                onOpen={(url, mediaItem) => {
+                  void openLightbox(url, mediaItem);
+                }}
+              />
+            ))}
+          </div>
+        )}
+        <PageControl
+          page={page}
+          totalPages={totalPages}
+          onChange={onChangePage}
+          disabled={loading}
+        />
+      </ArchivePanel>
 
       {lightbox ? (
         <div
@@ -250,13 +372,13 @@ export function MediaView({
           role="dialog"
           aria-modal="true"
           aria-label="Media preview"
-          onClick={() => setLightbox(null)}
+          onClick={closeLightbox}
         >
           <button
             type="button"
-            className="absolute top-4 right-4 text-cream"
+            className="absolute top-4 right-4 text-cream transition-colors hover:text-teal focus-visible:ring-offset-ink"
             aria-label="Close preview"
-            onClick={() => setLightbox(null)}
+            onClick={closeLightbox}
           >
             <X className="size-6" />
           </button>
@@ -267,15 +389,15 @@ export function MediaView({
                 src={lightbox.url}
                 alt={
                   lightbox.item.conversation
-                    ? `Media from ${lightbox.item.conversation}`
+                    ? `Media from ${stripInstagramFolderId(lightbox.item.conversation)}`
                     : "Archive media"
                 }
-                className="target-photo max-h-[70vh] w-full object-contain"
+                className={cn("target-photo max-h-[70vh] w-full object-contain")}
               />
             </VintagePhoto>
           </div>
         </div>
       ) : null}
-    </section>
+    </div>
   );
 }

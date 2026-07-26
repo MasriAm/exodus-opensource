@@ -35,9 +35,10 @@ import { SlideTitle } from "@/components/capsule/slide-title";
 import { StackedCards } from "@/components/capsule/stacked-cards";
 import { TagBox } from "@/components/capsule/tag-box";
 import { VintagePhoto } from "@/components/capsule/vintage-photo";
-import { YearSlider } from "@/components/capsule/year-slider";
 import { StatePanel } from "@/components/state-panel";
 import { ButtonLink } from "@/components/ui/button";
+import { UserText } from "@/components/user-text";
+import { stripInstagramFolderId } from "@/lib/instagram-labels";
 import { formatDate, formatNumber } from "@/lib/format";
 import {
   FALLBACK_LOADING_CAPTIONS,
@@ -191,7 +192,7 @@ function ArtifactPhoto({
   }, [zipPath, readMediaBlob]);
 
   return (
-    <VintagePhoto className="mx-auto max-w-sm">
+    <VintagePhoto className="max-w-sm">
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={url} alt="Archive photo" className="target-photo max-h-80 w-full" />
@@ -204,40 +205,36 @@ function ArtifactPhoto({
   );
 }
 
+/** Content column only — vertical centering lives on the stage, not here. */
 function SlideShell({
-  children,
+  title,
   subline,
+  children,
 }: {
-  children: ReactNode;
+  title?: ReactNode;
+  /** Supporting line under the headline (rotating prompts, context). */
   subline?: ReactNode;
+  children?: ReactNode;
 }) {
-  const reduceMotion = useReducedMotion();
   return (
-    <motion.div
-      className="mx-auto flex w-full max-w-3xl flex-col justify-center px-4 py-6 sm:min-h-full sm:px-8 sm:py-10"
-      initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 24 }}
-      animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -16 }}
-      transition={{ duration: 0.35, ease: "easeOut" }}
-    >
+    <div className="w-full max-w-3xl text-start">
+      {title}
       {subline ? (
-        <motion.p
-          className="mb-6 max-w-2xl font-body text-base leading-7 text-body sm:mb-8 sm:text-lg"
-          initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: reduceMotion ? 0 : 0.06, duration: 0.3 }}
+        <p
+          className={cn(
+            "w-full font-body text-base leading-7 text-body sm:text-lg",
+            title ? "mt-3 sm:mt-4" : "mb-5 sm:mb-6",
+          )}
         >
           {subline}
-        </motion.p>
+        </p>
       ) : null}
-      <motion.div
-        initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: reduceMotion ? 0 : 0.12, duration: 0.3 }}
-      >
-        {children}
-      </motion.div>
-    </motion.div>
+      {children ? (
+        <div className={cn("w-full", (title || subline) && "mt-6 sm:mt-8")}>
+          {children}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -297,10 +294,10 @@ export function WrappedDeck({
         id: "opening",
         render: () => (
           <SlideShell>
-            <p className="font-display text-sm tracking-[0.08em] text-body">
+            <p className="font-display text-sm font-bold tracking-[0.08em] text-ink">
               YOUR TIME CAPSULE
             </p>
-            <div className="mt-8 grid gap-6 sm:grid-cols-3">
+            <div className="mt-6 grid w-full max-w-lg grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-2.5">
               {[
                 { label: "Messages", value: data.totalMessages },
                 { label: "Media", value: data.totalMedia },
@@ -309,11 +306,11 @@ export function WrappedDeck({
                   value: yearsSpanned(data.activeFromMs, data.activeToMs),
                 },
               ].map((stat) => (
-                <CapsuleCard key={stat.label} className="p-6 text-center">
-                  <p className="font-display text-4xl font-bold text-ink">
+                <CapsuleCard key={stat.label} className="p-4 text-start sm:p-5">
+                  <p className="font-display text-3xl font-bold text-ink sm:text-4xl">
                     <CountUp value={stat.value} />
                   </p>
-                  <p className="meta-caps mt-3">{stat.label}</p>
+                  <p className="meta-caps mt-2 text-ink/80">{stat.label}</p>
                 </CapsuleCard>
               ))}
             </div>
@@ -326,15 +323,17 @@ export function WrappedDeck({
       built.push({
         id: "real-ones",
         render: () => (
-          <SlideShell subline="People you have been friends for the longest">
-            <SlideTitle accent="teal">The Real Ones</SlideTitle>
-            <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:items-end sm:justify-center">
+          <SlideShell
+            title={<SlideTitle accent="teal">The Real Ones</SlideTitle>}
+            subline="People you have been friends for the longest"
+          >
+            <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-end sm:justify-start sm:gap-3">
               {data.longestMutualFollows.map((mutual, mutualIndex) => (
                 <CapsuleCard
                   key={mutual.username}
                   className={cn(
-                    "w-full max-w-xs p-5",
-                    mutualIndex === 1 && "sm:-translate-y-4",
+                    "w-full max-w-[14rem] p-4",
+                    mutualIndex === 1 && "sm:-translate-y-2",
                   )}
                 >
                   <p className="font-display text-lg font-bold text-ink" dir="auto">
@@ -355,11 +354,14 @@ export function WrappedDeck({
     }
 
     if (data.longestConversation || data.mostTypedWord || data.longestCall) {
-      const handle = data.longestConversation?.conversation ?? "someone";
+      const handle = stripInstagramFolderId(
+        data.longestConversation?.conversation ?? "someone",
+      );
       built.push({
         id: "chat-era",
         render: () => (
           <SlideShell
+            title={<SlideTitle accent="ink">The Chat Era</SlideTitle>}
             subline={
               <>
                 In this archive, you couldn&apos;t stop talking to{" "}
@@ -367,9 +369,7 @@ export function WrappedDeck({
               </>
             }
           >
-            <SlideTitle accent="ink">The Chat Era</SlideTitle>
             <Receipt
-              className="mt-8"
               title="Chat history"
               rows={[
                 ...(data.longestConversation
@@ -422,13 +422,15 @@ export function WrappedDeck({
       built.push({
         id: "cringe",
         render: () => (
-          <SlideShell subline={cringePrompt}>
-            <SlideTitle accent="coral">Cringe Warning</SlideTitle>
-            <p className="meta-caps mt-3 text-[11px] text-body">
+          <SlideShell
+            title={<SlideTitle accent="coral">Cringe Warning</SlideTitle>}
+            subline={cringePrompt}
+          >
+            <p className="meta-caps text-[11px] text-body">
               On this day {yearsAgo} years ago ·{" "}
               <Mark>{formatDate(comment.occurredAtMs)}</Mark>
             </p>
-            <div className="group relative mt-8 overflow-hidden border-strong bg-cream">
+            <div className="group relative mt-4 overflow-hidden border-strong bg-cream">
               <p
                 dir="auto"
                 className="min-h-24 p-6 font-body text-lg leading-8 text-ink"
@@ -438,7 +440,7 @@ export function WrappedDeck({
               <button
                 type="button"
                 className={cn(
-                  "absolute inset-0 flex items-center justify-center bg-slate font-display text-sm tracking-[0.08em] text-cream transition-opacity",
+                  "absolute inset-0 flex cursor-pointer items-center justify-center bg-slate font-display text-sm tracking-[0.08em] text-cream transition-opacity hover:bg-ink",
                   "opacity-100 group-hover:opacity-0 focus-visible:opacity-0",
                   cringeRevealed && "pointer-events-none opacity-0",
                 )}
@@ -477,27 +479,33 @@ export function WrappedDeck({
         id: "identity",
         render: () => (
           <SlideShell
+            title={<SlideTitle accent="slate">The Identity Crisis</SlideTitle>}
             subline={`You've changed your bio ${formatNumber(Math.max(1, bioChanges))} times. Click your current ID card to uncover your past digital identities.`}
           >
-            <SlideTitle accent="slate">The Identity Crisis</SlideTitle>
             {!identitiesOpen ? (
               <button
                 type="button"
-                className="mt-8 w-full max-w-md text-start"
+                className="interactive-row w-full max-w-md rounded-[2px] text-start focus-visible:ring-2 focus-visible:ring-teal"
                 onClick={() => setIdentitiesOpen(true)}
               >
                 <StackedCards>
                   <div className="space-y-3 p-5">
                     <p className="meta-caps">Username</p>
-                    <p className="font-display text-xl font-bold" dir="auto">
+                    <UserText
+                      as="p"
+                      className="font-body text-xl font-bold text-ink"
+                    >
                       {data.profileHistory.find((row) => row.field === "username")
                         ?.value ?? newest.value}
-                    </p>
+                    </UserText>
                     <p className="meta-caps pt-2">Bio</p>
-                    <p className="font-body text-sm leading-6 text-body" dir="auto">
+                    <UserText
+                      as="p"
+                      className="font-body text-sm leading-6 text-body"
+                    >
                       {data.profileHistory.find((row) => row.field === "bio")
                         ?.value ?? "—"}
-                    </p>
+                    </UserText>
                     <p className="meta-caps pt-2">
                       Year {new Date(newest.occurredAtMs).getUTCFullYear()}
                     </p>
@@ -505,18 +513,28 @@ export function WrappedDeck({
                 </StackedCards>
               </button>
             ) : (
-              <div className="mt-8 grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2">
                 {[...data.profileHistory].reverse().map((change) => (
                   <CapsuleCard
                     key={`${change.occurredAtMs}-${change.field}-${change.value}`}
                     className="p-4"
                   >
                     <p className="meta-caps">
-                      {change.field} · {formatDate(change.occurredAtMs)}
+                      {change.field === "username"
+                        ? "Username change"
+                        : change.field === "bio"
+                          ? "Bio update"
+                          : change.field}{" "}
+                      · {formatDate(change.occurredAtMs)}
                     </p>
-                    <p className="mt-2 font-display text-base font-bold" dir="auto">
-                      {change.value}
-                    </p>
+                    <UserText
+                      as="p"
+                      className="mt-2 font-body text-base font-bold text-ink"
+                    >
+                      {change.field === "username"
+                        ? `@${change.value}`
+                        : change.value}
+                    </UserText>
                   </CapsuleCard>
                 ))}
               </div>
@@ -533,9 +551,11 @@ export function WrappedDeck({
       built.push({
         id: "interests",
         render: () => (
-          <SlideShell subline="The algorithm thought you were interested in">
-            <SlideTitle accent="slate">Your Interests</SlideTitle>
-            <div className="mt-8 flex flex-wrap gap-2">
+          <SlideShell
+            title={<SlideTitle accent="slate">Your Interests</SlideTitle>}
+            subline="The algorithm thought you were interested in"
+          >
+            <div className="flex flex-wrap gap-2">
               <AnimatePresence mode="popLayout">
                 {topics.map((topic) => (
                   <motion.div
@@ -550,12 +570,27 @@ export function WrappedDeck({
                 ))}
               </AnimatePresence>
             </div>
-            <YearSlider
-              className="mt-10"
-              years={interestYears}
-              value={interestYear}
-              onChange={setInterestYear}
-            />
+            {interestYears.length > 1 ? (
+              <div className="mt-8 flex flex-wrap gap-2" role="tablist" aria-label="Interest year">
+                {interestYears.map((entry) => (
+                  <button
+                    key={entry}
+                    type="button"
+                    role="tab"
+                    aria-selected={entry === interestYear}
+                    onClick={() => setInterestYear(entry)}
+                    className={cn(
+                      "border border-ink/30 px-3 py-1.5 font-display text-xs font-bold tracking-[0.06em] transition-colors",
+                      entry === interestYear
+                        ? "border-teal bg-teal-wash text-teal"
+                        : "bg-cream text-ink/75 hover:border-ink hover:bg-receipt",
+                    )}
+                  >
+                    {entry}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </SlideShell>
         ),
       });
@@ -572,15 +607,19 @@ export function WrappedDeck({
       built.push({
         id: "artifact",
         render: () => (
-          <SlideShell subline={artifactPrompt}>
-            <SlideTitle accent="ink">The Artifact</SlideTitle>
-            <div className="mt-8 flex flex-col items-center">
+          <SlideShell
+            title={<SlideTitle accent="ink">The Artifact</SlideTitle>}
+            subline={artifactPrompt}
+          >
+            <div className="mx-auto flex w-full max-w-md flex-col items-center text-center">
               <ArtifactPhoto
                 zipPath={image.zipPath}
                 readMediaBlob={readMediaBlob}
               />
               <p className="meta-caps mt-4">
-                <span dir="auto">{image.conversation}</span>
+                <span dir="auto">
+                  {stripInstagramFolderId(image.conversation ?? "")}
+                </span>
                 {image.takenAtMs
                   ? ` · ${formatDate(image.takenAtMs)}`
                   : null}
@@ -611,6 +650,7 @@ export function WrappedDeck({
         id: "3am",
         render: () => (
           <SlideShell
+            title={<SlideTitle accent="coral">The 3am Era</SlideTitle>}
             subline={
               <>
                 {formatNumber(data.threeAmEraMessages)} messages between 2–4am
@@ -623,8 +663,7 @@ export function WrappedDeck({
               </>
             }
           >
-            <SlideTitle accent="coral">The 3am Era</SlideTitle>
-            <CapsuleCard className="mt-8 h-72 p-4">
+            <CapsuleCard className="h-72 p-4">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data.messagesByHour}>
                   <CartesianGrid
@@ -669,9 +708,11 @@ export function WrappedDeck({
       built.push({
         id: "words",
         render: () => (
-          <SlideShell subline="Words that kept coming back">
-            <SlideTitle accent="teal">Words You Overused</SlideTitle>
-            <div className="mt-8 flex flex-wrap items-end justify-center gap-3">
+          <SlideShell
+            title={<SlideTitle accent="teal">Words You Overused</SlideTitle>}
+            subline="Words that kept coming back"
+          >
+            <div className="flex flex-wrap items-end justify-start gap-3">
               {data.topWords.slice(0, 16).map((word, wordIndex) => {
                 const scale = 0.85 + (word.count / maxCount) * 0.55;
                 return (
@@ -694,19 +735,31 @@ export function WrappedDeck({
       built.push({
         id: "started",
         render: () => (
-          <SlideShell>
-            <SlideTitle accent="ink">Where It All Started</SlideTitle>
-            <p className="mt-4 font-body text-body">
-              <Mark>{formatDate(data.firstMessage!.sentAtMs)}</Mark>
+          <SlideShell
+            title={<SlideTitle accent="ink">Where It All Started</SlideTitle>}
+            subline={
+              <>
+                Earliest message in this ZIP ·{" "}
+                <Mark>{formatDate(data.firstMessage!.sentAtMs)}</Mark>
+              </>
+            }
+          >
+            <p className="mb-4 max-w-xl font-body text-sm leading-6 text-body">
+              Instagram lets you pick a date range when you export. This is the
+              oldest message Meta included in the file you uploaded — not
+              necessarily the first DM you ever sent.
             </p>
             <Receipt
-              className="mt-8"
-              title="First message"
+              title="First message in export"
               rows={[
                 {
                   label: "Conversation",
                   value: (
-                    <span dir="auto">{data.firstMessage!.conversation}</span>
+                    <span dir="auto">
+                      {stripInstagramFolderId(
+                        data.firstMessage!.conversation,
+                      )}
+                    </span>
                   ),
                 },
                 {
@@ -727,9 +780,11 @@ export function WrappedDeck({
     built.push({
       id: "finale",
       render: () => (
-        <SlideShell subline="Your archive stays on this device. The dashboard is ready whenever you want the numbers again.">
-          <SlideTitle accent="teal">That&apos;s a wrap</SlideTitle>
-          <p className="mt-6 max-w-xl font-body text-base leading-7 text-body sm:text-lg">
+        <SlideShell
+          title={<SlideTitle accent="teal">That&apos;s a wrap</SlideTitle>}
+          subline="Your archive stays on this device. The dashboard is ready whenever you want the numbers again."
+        >
+          <p className="max-w-xl font-body text-base leading-7 text-body sm:text-lg">
             {formatNumber(data.totalMessages)} messages,{" "}
             {formatNumber(data.totalMedia)} media — privately counted.
           </p>
@@ -861,21 +916,23 @@ export function WrappedDeck({
   const current = slides[safeIndex];
 
   const navButtonClass =
-    "inline-flex min-h-12 min-w-[7.25rem] items-center justify-center border-strong bg-cream px-4 font-mono text-base font-bold tracking-[0.04em] text-ink shadow-press transition-[transform,box-shadow] enabled:hover:bg-receipt enabled:active:translate-x-0.5 enabled:active:translate-y-0.5 enabled:active:shadow-[2px_2px_0_var(--ink)] disabled:pointer-events-none disabled:opacity-30 motion-reduce:transition-none sm:min-h-[3.25rem] sm:min-w-[8.5rem] sm:px-5 sm:text-lg";
+    "inline-flex min-h-12 min-w-[7.25rem] cursor-pointer items-center justify-center border-strong bg-cream px-4 font-mono text-base font-bold tracking-[0.04em] text-ink shadow-press transition-[transform,box-shadow,background-color,opacity] enabled:hover:bg-receipt enabled:active:translate-x-0.5 enabled:active:translate-y-0.5 enabled:active:shadow-[2px_2px_0_var(--ink)] disabled:cursor-not-allowed disabled:bg-paper disabled:opacity-40 disabled:shadow-none motion-reduce:transition-none sm:min-h-[3.25rem] sm:min-w-[8.5rem] sm:px-5 sm:text-lg";
 
   return (
-    <main className="flex min-h-dvh flex-col bg-paper">
+    <main className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-paper">
       <header className="relative z-20 mx-auto flex w-full max-w-5xl shrink-0 items-center justify-between gap-3 px-5 py-3 sm:px-8 sm:py-4">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           {slides.map((slide, slideIndex) => (
             <button
               key={slide.id}
               type="button"
               aria-label={`Go to slide ${slideIndex + 1}`}
-              aria-current={slideIndex === safeIndex}
+              aria-current={slideIndex === safeIndex ? "true" : undefined}
               className={cn(
-                "size-2.5 shrink-0 rounded-full border border-ink transition",
-                slideIndex === safeIndex ? "bg-ink" : "bg-transparent",
+                "size-3 shrink-0 rounded-full border-2 border-ink transition-[background-color,transform,box-shadow] hover:scale-110 hover:bg-ink/40 focus-visible:ring-2 focus-visible:ring-teal focus-visible:ring-offset-2",
+                slideIndex === safeIndex
+                  ? "bg-ink shadow-[0_0_0_2px_var(--paper),0_0_0_4px_var(--teal)]"
+                  : "bg-transparent",
               )}
               onClick={() => setIndex(slideIndex)}
             />
@@ -884,37 +941,54 @@ export function WrappedDeck({
         <button
           type="button"
           onClick={goDashboard}
-          className="shrink-0 font-mono text-xs tracking-[0.02em] text-body underline underline-offset-4"
+          className="interactive-quiet shrink-0 px-2.5 py-1.5 font-mono text-[11px] font-bold tracking-[0.04em] uppercase sm:text-xs"
         >
           Skip to dashboard
         </button>
       </header>
 
       <div
-        className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        className="relative min-h-0 flex-1 bg-paper"
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
       >
         <button
           type="button"
           aria-label="Previous slide"
-          className="absolute inset-y-0 left-0 z-[5] hidden w-12 cursor-w-resize bg-transparent sm:block"
+          className="absolute inset-y-0 left-0 z-[5] hidden w-12 bg-transparent enabled:hover:bg-ink/[0.04] disabled:cursor-default sm:block"
           onClick={() => go(-1)}
           disabled={safeIndex === 0}
         />
         <button
           type="button"
           aria-label="Next slide"
-          className="absolute inset-y-0 right-0 z-[5] hidden w-12 cursor-e-resize bg-transparent sm:block"
+          className="absolute inset-y-0 right-0 z-[5] hidden w-12 bg-transparent enabled:hover:bg-ink/[0.04] disabled:cursor-default sm:block"
           onClick={() => go(1)}
           disabled={safeIndex >= slides.length - 1}
         />
 
-        <div className="relative z-10 min-h-full">
-          <AnimatePresence mode="wait">
-            <div key={current.id}>{current.render()}</div>
-          </AnimatePresence>
-        </div>
+        {/*
+          Absolute stage: every slide fills the region between header and nav.
+          Opacity-only crossfade — no y-slide (that caused the grey flash).
+        */}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={current.id}
+            className="absolute inset-0 z-[1] overflow-y-auto overscroll-contain bg-paper"
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={reduceMotion ? undefined : { opacity: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.18, ease: "easeOut" }}
+          >
+            {/*
+              m-auto centers short slides; when content is taller than the
+              stage it collapses to the top so scrolling starts correctly.
+            */}
+            <div className="flex min-h-full w-full flex-col px-5 py-6 sm:px-8 sm:py-8">
+              <div className="m-auto w-full max-w-3xl">{current.render()}</div>
+            </div>
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       <nav

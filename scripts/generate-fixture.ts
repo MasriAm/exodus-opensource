@@ -382,11 +382,69 @@ function createInstagramMessages(): GeneratedInstagramMessage[] {
 
   shuffle(drafts, random);
 
+  // Burstiness across the full date span: spike days, quiet weeks, and
+  // a few genuinely huge days — not 1–3 messages on every calendar day.
+  const activeDays: number[] = [];
+  for (let day = 0; day < INSTAGRAM_DATE_SPAN_DAYS; ) {
+    const roll = random();
+    if (roll < 0.2) {
+      day += 4 + randomInteger(random, 10); // dead stretch
+      continue;
+    }
+    activeDays.push(day);
+    // Occasional multi-day streaks of activity.
+    if (roll > 0.55) {
+      const streak = 1 + randomInteger(random, 6);
+      for (let s = 1; s <= streak && day + s < INSTAGRAM_DATE_SPAN_DAYS; s += 1) {
+        activeDays.push(day + s);
+      }
+      day += streak + 1;
+    } else {
+      day += 1;
+    }
+  }
+  if (activeDays.length === 0) {
+    activeDays.push(0, Math.floor(INSTAGRAM_DATE_SPAN_DAYS / 2), INSTAGRAM_DATE_SPAN_DAYS - 1);
+  }
+  // Guarantee coverage of start and end so analytics span both years.
+  if (activeDays[0] !== 0) {
+    activeDays.unshift(0);
+  }
+  if (activeDays[activeDays.length - 1] !== INSTAGRAM_DATE_SPAN_DAYS - 1) {
+    activeDays.push(INSTAGRAM_DATE_SPAN_DAYS - 1);
+  }
+
+  const dayOffsets: number[] = [];
+  let remaining = TOTAL_INSTAGRAM_MESSAGES;
+  for (let index = 0; index < activeDays.length; index += 1) {
+    const daysLeft = activeDays.length - index;
+    const roll = random();
+    let count: number;
+    if (roll < 0.05) {
+      count = 50 + randomInteger(random, 80); // spike
+    } else if (roll < 0.15) {
+      count = 18 + randomInteger(random, 25); // busy
+    } else if (roll < 0.55) {
+      count = 1 + randomInteger(random, 3); // light
+    } else {
+      count = 4 + randomInteger(random, 9); // moderate
+    }
+    // Leave at least one message for each remaining active day.
+    count = Math.min(count, Math.max(1, remaining - (daysLeft - 1)));
+    for (let i = 0; i < count; i += 1) {
+      dayOffsets.push(activeDays[index]);
+    }
+    remaining -= count;
+  }
+  while (remaining > 0) {
+    const spikeDay = activeDays[randomInteger(random, activeDays.length)];
+    dayOffsets.push(spikeDay);
+    remaining -= 1;
+  }
+  dayOffsets.sort((a, b) => a - b);
+
   return drafts.map((draft, index) => {
-    const dayOffset = Math.floor(
-      (index * INSTAGRAM_DATE_SPAN_DAYS) /
-        (TOTAL_INSTAGRAM_MESSAGES - 1),
-    );
+    const dayOffset = dayOffsets[index] ?? 0;
     const hour = hourForMessage(index, random);
     const minute = randomInteger(random, 60);
     const second = randomInteger(random, 60);

@@ -427,31 +427,6 @@ async function run() {
         ),
       );
       await captureScreenshot("wrapped");
-      const startedShareCard = await evaluate(`
-        (() => {
-          const button = [...document.querySelectorAll("button")].find(
-            (candidate) => candidate.textContent?.includes("Download share card"),
-          );
-          button?.click();
-          return Boolean(button);
-        })()
-      `);
-      if (!startedShareCard) {
-        throw new Error("The Wrapped share-card button was not found.");
-      }
-      const shareCardPath = await waitFor("the Wrapped PNG download", async () => {
-        const filenames = await readdir(downloadDirectory);
-        const filename = filenames.find((name) => name.endsWith(".png"));
-        return filename ? join(downloadDirectory, filename) : null;
-      });
-      const shareCard = await readFile(shareCardPath);
-      const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-      if (
-        shareCard.length < 1_000 ||
-        pngSignature.some((byte, index) => shareCard[index] !== byte)
-      ) {
-        throw new Error("The Wrapped share-card download is not a valid PNG.");
-      }
 
       const returnedHome = await evaluate(`
         (() => {

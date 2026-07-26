@@ -1,7 +1,7 @@
 "use client";
 
 import type { ArchiveFilter } from "@/lib/db/archive-filter";
-import { formatNumber } from "@/lib/format";
+import { pluralize } from "@/lib/format";
 import type { FilterOptionsResult } from "@/lib/db/types";
 import { cn } from "@/lib/utils";
 
@@ -11,17 +11,55 @@ type FilterBarProps = {
   year: number | null;
   years: number[];
   matchCount: number | null;
-  matchLabel?: string;
+  /** Singular noun for the match count, e.g. "message" / "person". */
+  matchNoun?: string;
+  matchPlural?: string;
   onChange: (next: ArchiveFilter) => void;
   onChangeYear: (year: number | null) => void;
   className?: string;
 };
 
-type Chip = {
-  key: string;
+function LabeledSelect({
+  label,
+  displayValue,
+  value,
+  onChange,
+  children,
+  className,
+}: {
   label: string;
-  onRemove: () => void;
-};
+  displayValue: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <label
+      className={cn(
+        "relative inline-flex min-w-0 cursor-pointer items-center gap-2 border-2 border-ink bg-cream px-2.5 py-2 font-display text-xs font-bold uppercase tracking-[0.06em] text-ink transition-colors hover:bg-receipt",
+        className,
+      )}
+    >
+      <span className="pointer-events-none shrink-0 text-ink/75">{label}:</span>
+      <span className="pointer-events-none min-w-0 flex-1 truncate text-ink">
+        {displayValue}
+      </span>
+      <span className="pointer-events-none shrink-0 text-ink/50" aria-hidden="true">
+        ▾
+      </span>
+      {/* Covers the whole control so any click opens the native menu. */}
+      <select
+        aria-label={label}
+        className="absolute inset-0 cursor-pointer opacity-0"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
 
 export function FilterBar({
   options,
@@ -29,146 +67,81 @@ export function FilterBar({
   year,
   years,
   matchCount,
-  matchLabel = "messages match",
+  matchNoun = "message",
+  matchPlural,
   onChange,
   onChangeYear,
   className,
 }: FilterBarProps) {
   const platforms = options?.platforms ?? [];
-  const chips: Chip[] = [];
-
-  if (year !== null) {
-    chips.push({
-      key: "year",
-      label: String(year),
-      onRemove: () => onChangeYear(null),
-    });
-  }
-  if (filter.platform) {
-    chips.push({
-      key: "platform",
-      label: filter.platform,
-      onRemove: () => onChange({ ...filter, platform: null }),
-    });
-  }
-  if (filter.conversation) {
-    chips.push({
-      key: "conversation",
-      label: filter.conversation,
-      onRemove: () => onChange({ ...filter, conversation: null }),
-    });
-  }
-
-  const active = chips.length > 0;
+  const active =
+    year !== null || Boolean(filter.platform) || Boolean(filter.conversation);
+  const yearLabel = year !== null ? String(year) : "All time";
+  const platformLabel = filter.platform ?? "All";
+  const personLabel = filter.conversation ?? "Everyone";
 
   return (
-    <div
-      className={cn(
-        "space-y-3 border border-ink/20 bg-cream/60 px-3 py-3 sm:px-4",
-        className,
-      )}
-    >
-      <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-        <label className="flex min-w-[7rem] flex-col gap-1">
-          <span className="font-display text-[11px] uppercase tracking-[0.08em] text-body">
-            Time
-          </span>
-          <select
-            className="border-b border-ink/40 bg-transparent py-1 font-display text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-teal"
-            value={year ?? ""}
-            onChange={(event) => {
-              const value = event.target.value;
-              onChangeYear(value ? Number(value) : null);
-            }}
-            aria-label="Filter by year"
-          >
-            <option value="">All time</option>
-            {years.map((entry) => (
-              <option key={entry} value={entry}>
-                {entry}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex min-w-[8rem] flex-col gap-1">
-          <span className="font-display text-[11px] uppercase tracking-[0.08em] text-body">
-            Platform
-          </span>
-          <select
-            className="border-b border-ink/40 bg-transparent py-1 font-display text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-teal"
-            value={filter.platform ?? ""}
-            onChange={(event) =>
-              onChange({
-                ...filter,
-                platform: event.target.value || null,
-              })
-            }
-          >
-            <option value="">All platforms</option>
-            {platforms.map((platform) => (
-              <option key={platform} value={platform}>
-                {platform}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex min-w-[10rem] flex-1 flex-col gap-1">
-          <span className="font-display text-[11px] uppercase tracking-[0.08em] text-body">
-            People
-          </span>
-          <select
-            className="border-b border-ink/40 bg-transparent py-1 font-display text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-teal"
-            value={filter.conversation ?? ""}
-            onChange={(event) =>
-              onChange({
-                ...filter,
-                conversation: event.target.value || null,
-              })
-            }
-          >
-            <option value="">Everyone</option>
-            {(options?.conversations ?? []).map((item) => (
-              <option
-                key={`${item.platform}:${item.conversation}`}
-                value={item.conversation}
-              >
-                {item.conversation}
-              </option>
-            ))}
-          </select>
-        </label>
-
+    <div className={cn("space-y-3", className)}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-display text-xs font-bold uppercase tracking-[0.08em] text-ink">
+          Filters:
+        </span>
+        <LabeledSelect
+          label="Year"
+          displayValue={yearLabel}
+          value={year !== null ? String(year) : ""}
+          onChange={(value) => onChangeYear(value ? Number(value) : null)}
+        >
+          <option value="">All time</option>
+          {years.map((entry) => (
+            <option key={entry} value={entry}>
+              {entry}
+            </option>
+          ))}
+        </LabeledSelect>
+        <LabeledSelect
+          label="Platform"
+          displayValue={platformLabel}
+          value={filter.platform ?? ""}
+          onChange={(value) =>
+            onChange({ ...filter, platform: value || null })
+          }
+        >
+          <option value="">All</option>
+          {platforms.map((platform) => (
+            <option key={platform} value={platform}>
+              {platform}
+            </option>
+          ))}
+        </LabeledSelect>
+        <LabeledSelect
+          label="Person"
+          displayValue={personLabel}
+          value={filter.conversation ?? ""}
+          onChange={(value) =>
+            onChange({ ...filter, conversation: value || null })
+          }
+          className="min-w-[12rem] flex-1"
+        >
+          <option value="">Everyone</option>
+          {(options?.conversations ?? []).map((item) => (
+            <option
+              key={`${item.platform}:${item.conversation}`}
+              value={item.conversation}
+            >
+              {item.conversation}
+            </option>
+          ))}
+        </LabeledSelect>
         {matchCount !== null ? (
-          <p className="ms-auto font-display text-[11px] uppercase tracking-[0.08em] text-body">
-            <span className="font-bold text-ink">{formatNumber(matchCount)}</span>{" "}
-            {matchLabel}
+          <p className="ms-auto font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink">
+            {pluralize(matchCount, matchNoun, matchPlural)} match
           </p>
         ) : null}
-      </div>
-
-      {active ? (
-        <div className="flex flex-wrap items-center gap-2 border-t border-ink/20 pt-3">
-          {chips.map((chip) => (
-            <button
-              key={chip.key}
-              type="button"
-              onClick={chip.onRemove}
-              className="inline-flex max-w-full items-center gap-2 border border-ink/20 bg-paper px-2 py-1 font-display text-[11px] tracking-[0.04em] text-ink transition-colors duration-150 hover:bg-teal-wash"
-              title={`Remove ${chip.label}`}
-            >
-              <span dir="auto" className="truncate">
-                {chip.label}
-              </span>
-              <span aria-hidden="true" className="text-body">
-                ×
-              </span>
-            </button>
-          ))}
+        {active ? (
           <button
             type="button"
-            className="ms-auto font-display text-[11px] uppercase tracking-[0.08em] text-teal hover:underline"
+            className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-teal hover:underline"
             onClick={() => {
               onChangeYear(null);
               onChange({
@@ -181,8 +154,8 @@ export function FilterBar({
           >
             Reset
           </button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }

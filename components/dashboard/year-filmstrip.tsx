@@ -35,10 +35,10 @@ export function YearFilmstrip({
         aria-selected={value === null}
         onClick={() => onChange(null)}
         className={cn(
-          "shrink-0 border-2 px-2 py-1 font-display text-xs tracking-[0.08em]",
+          "shrink-0 border-2 px-2 py-1 font-display text-xs tracking-[0.08em] transition-colors",
           value === null
             ? "border-ink bg-ink text-cream"
-            : "border-transparent text-body hover:border-ink/40",
+            : "border-transparent text-body hover:border-ink/40 hover:bg-cream",
         )}
       >
         ALL
@@ -51,10 +51,10 @@ export function YearFilmstrip({
           aria-selected={value === year}
           onClick={() => onChange(year)}
           className={cn(
-            "shrink-0 border-2 px-2 py-1 font-display text-xs",
+            "shrink-0 border-2 px-2 py-1 font-display text-xs transition-colors",
             value === year
-              ? "border-teal bg-teal text-cream"
-              : "border-transparent text-body hover:border-ink/40",
+              ? "border-teal bg-teal-wash text-teal"
+              : "border-transparent text-body hover:border-ink/40 hover:bg-cream",
           )}
         >
           {year}

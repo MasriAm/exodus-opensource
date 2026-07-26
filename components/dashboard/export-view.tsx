@@ -5,10 +5,11 @@ import { useState } from "react";
 import { PressButton } from "@/components/capsule/press-button";
 import { Receipt } from "@/components/capsule/receipt";
 import { SlideTitle } from "@/components/capsule/slide-title";
+import { SPREADSHEET_ROW_LIMIT } from "@/lib/db/export";
 import { downloadBlob } from "@/lib/format";
 
 export type ExportTable = "messages" | "media" | "events";
-export type ExportFormat = "csv" | "json";
+export type ExportFormat = "xlsx" | "csv" | "json";
 
 type ExportViewProps = {
   exportTable: (table: ExportTable, format: ExportFormat) => Promise<Blob>;
@@ -37,17 +38,42 @@ const tables: ReadonlyArray<{
   },
 ];
 
+function extensionForBlob(format: ExportFormat, blob: Blob): string {
+  if (format === "json") {
+    return "json";
+  }
+  if (
+    format === "xlsx" &&
+    blob.type.includes("spreadsheetml")
+  ) {
+    return "xlsx";
+  }
+  // Large xlsx requests fall back to CSV inside the worker.
+  if (format === "xlsx" || format === "csv") {
+    return "csv";
+  }
+  return format;
+}
+
 export function ExportView({ exportTable }: ExportViewProps) {
   const [activeExport, setActiveExport] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   const runExport = async (table: ExportTable, format: ExportFormat) => {
     const operation = `${table}-${format}`;
     setActiveExport(operation);
     setError(null);
+    setNote(null);
     try {
       const blob = await exportTable(table, format);
-      downloadBlob(blob, `exodus-${table}.${format}`);
+      const extension = extensionForBlob(format, blob);
+      downloadBlob(blob, `exodus-${table}.${extension}`);
+      if (format === "xlsx" && extension === "csv") {
+        setNote(
+          `Spreadsheet formatting is limited to ${SPREADSHEET_ROW_LIMIT.toLocaleString()} rows — downloaded CSV instead so the full table still fits in memory.`,
+        );
+      }
     } catch (exportError: unknown) {
       console.error(`Could not export ${table} as ${format}.`, exportError);
       setError("The export could not be created. Please try again.");
@@ -61,8 +87,10 @@ export function ExportView({ exportTable }: ExportViewProps) {
       <div>
         <SlideTitle accent="teal">Take back a clean copy</SlideTitle>
         <p className="mt-3 max-w-2xl font-body text-sm leading-6 text-body">
-          DuckDB creates each file inside the browser worker. Downloads are
-          generated locally and are never uploaded.
+          Spreadsheets include column widths, a frozen header, and readable
+          fonts (up to {SPREADSHEET_ROW_LIMIT.toLocaleString()} rows). Larger
+          tables download as CSV. JSON is a plain dump. Everything stays on this
+          device.
         </p>
       </div>
 
@@ -72,6 +100,14 @@ export function ExportView({ exportTable }: ExportViewProps) {
           className="border-strong bg-coral/10 px-4 py-3 font-body text-sm text-coral"
         >
           {error}
+        </p>
+      ) : null}
+      {note ? (
+        <p
+          role="status"
+          className="border-strong bg-teal-wash px-4 py-3 font-body text-sm text-ink"
+        >
+          {note}
         </p>
       ) : null}
 
@@ -86,6 +122,14 @@ export function ExportView({ exportTable }: ExportViewProps) {
                 label: "Actions",
                 value: (
                   <span className="inline-flex flex-wrap justify-end gap-2">
+                    <PressButton
+                      disabled={activeExport !== null}
+                      onClick={() => void runExport(table.id, "xlsx")}
+                    >
+                      {activeExport === `${table.id}-xlsx`
+                        ? "Creating…"
+                        : "Download spreadsheet"}
+                    </PressButton>
                     <PressButton
                       disabled={activeExport !== null}
                       onClick={() => void runExport(table.id, "csv")}

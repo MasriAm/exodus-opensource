@@ -1,7 +1,14 @@
-import { MessageCircle, Paperclip } from "lucide-react";
+"use client";
 
+import { MessageCircle } from "lucide-react";
+
+import { ArchivePanel } from "@/components/dashboard/archive-panel";
+import { PageControl } from "@/components/dashboard/page-control";
 import { StatePanel } from "@/components/state-panel";
-import { formatDateTime, formatNumber } from "@/lib/format";
+import { UserText } from "@/components/user-text";
+import { stripInstagramFolderId } from "@/lib/instagram-labels";
+import { formatDateTime, pluralize } from "@/lib/format";
+import { isOutgoingSender } from "@/lib/ui-text";
 import { cn } from "@/lib/utils";
 
 export type ConversationItem = {
@@ -25,10 +32,26 @@ type MessagesViewProps = {
   messages: MessageItem[];
   loading: boolean;
   error: string | null;
-  hasMore: boolean;
+  page: number;
+  totalPages: number;
   onSelectConversation: (conversation: string) => void;
-  onLoadMore: () => void;
+  onChangePage: (page: number) => void;
 };
+
+function dayKey(value: number | string | Date): string {
+  const date = new Date(value);
+  return `${date.getUTCFullYear()}-${date.getUTCMonth()}-${date.getUTCDate()}`;
+}
+
+function dayLabel(value: number | string | Date): string {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(value));
+}
 
 export function MessagesView({
   conversations,
@@ -36,9 +59,10 @@ export function MessagesView({
   messages,
   loading,
   error,
-  hasMore,
+  page,
+  totalPages,
   onSelectConversation,
-  onLoadMore,
+  onChangePage,
 }: MessagesViewProps) {
   if (error) {
     return (
@@ -59,73 +83,82 @@ export function MessagesView({
     );
   }
 
+  const senders = messages.map((message) => message.sender);
+  const selectedMeta = conversations.find(
+    (entry) => entry.conversation === selectedConversation,
+  );
+
   return (
-    <div className="space-y-4">
-      <p className="font-body text-[15px] leading-7 text-body">
-        Browse every thread as a quiet ledger — pick a conversation, then scroll
-        the messages.
+    <div className="space-y-5">
+      <p className="font-body text-[15px] font-medium leading-7 text-ink/85">
+        Pick a thread on the left. Incoming sits left on paper; your replies sit
+        right in ink.
       </p>
 
-      <div className="grid min-h-[28rem] gap-0 border border-ink/20 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
-        <aside className="border-b border-ink/20 lg:border-b-0 lg:border-e">
-          <div className="border-b border-ink/20 px-3 py-3">
-            <p className="meta-caps text-[11px] text-body">
-              {formatNumber(conversations.length)} threads
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
+        <ArchivePanel
+          title="Conversation index"
+          subtitle="Thread count for this filter. Names in the list are people you wrote with."
+          bodyClassName="!p-0"
+        >
+          <div className="border-b border-ink/20 px-4 py-2">
+            <p className="font-display text-[10px] font-bold uppercase tracking-[0.08em] text-ink/60">
+              {pluralize(conversations.length, "thread")} total
             </p>
           </div>
-          <div className="flex max-h-56 gap-0 overflow-auto lg:max-h-[min(70vh,40rem)] lg:block">
+          <div className="flex max-h-44 overflow-auto lg:max-h-[min(55vh,28rem)] lg:block">
             {conversations.map((conversation) => (
               <button
                 key={conversation.conversation}
                 type="button"
                 onClick={() => onSelectConversation(conversation.conversation)}
                 className={cn(
-                  "flex min-w-[12rem] flex-col gap-1 border-b border-ink/20 px-3 py-3 text-start transition-colors duration-150 lg:min-w-0 lg:w-full",
+                  "flex min-w-[12rem] flex-col gap-1 border-b border-ink/20 px-4 py-3 text-start transition-colors lg:min-w-0 lg:w-full",
                   selectedConversation === conversation.conversation
                     ? "bg-teal-wash"
-                    : "hover:bg-teal-wash",
+                    : "hover:bg-paper/80",
                 )}
               >
-                <span
-                  dir="auto"
-                  className="block truncate font-display text-xs text-ink"
-                >
+                <UserText className="block truncate font-body text-sm font-semibold text-ink">
                   {conversation.conversation}
-                </span>
-                <span
-                  dir="auto"
-                  className="block truncate font-body text-[13px] text-body"
-                >
+                </UserText>
+                <UserText className="block truncate font-body text-[13px] text-ink/70">
                   {conversation.lastSnippet ?? "No text preview"}
-                </span>
-                <span className="meta-caps text-[10px] text-body">
-                  {formatNumber(conversation.messageCount)} messages
+                </UserText>
+                <span className="font-display text-[10px] font-bold uppercase tracking-[0.06em] text-ink/65">
+                  {pluralize(conversation.messageCount, "message")}
                 </span>
               </button>
             ))}
           </div>
-        </aside>
+        </ArchivePanel>
 
-        <section className="flex min-w-0 flex-col">
-          <div className="border-b border-ink/20 px-4 py-3">
-            <h2
-              dir="auto"
-              className="truncate font-display text-[15px] font-bold text-ink"
-            >
-              {selectedConversation ?? "Choose a conversation"}
-            </h2>
-            {selectedConversation ? (
-              <p className="mt-0.5 font-body text-[13px] text-body">
-                Messages stay on this device. Scroll up for earlier ones.
-              </p>
-            ) : null}
-          </div>
-
+        <ArchivePanel
+          title={
+            selectedConversation
+              ? `DMs: ${stripInstagramFolderId(selectedConversation)}`
+              : "Choose a conversation"
+          }
+          subtitle={
+            selectedMeta
+              ? `${pluralize(selectedMeta.messageCount, "message")} in this thread · ${page} of ${totalPages}`
+              : "Select a thread to browse its messages."
+          }
+          bodyClassName={cn(
+            "flex flex-col !p-0",
+            messages.length <= 6
+              ? "min-h-[14rem]"
+              : messages.length <= 12
+                ? "min-h-[18rem]"
+                : "min-h-[22rem]",
+            "max-h-[min(62vh,32rem)]",
+          )}
+        >
           {loading ? (
             <StatePanel
               kind="loading"
               title="Reading messages"
-              description="The worker is loading this conversation from the local database."
+              description="The worker is loading this page from the local database."
               className="m-4 flex-1"
             />
           ) : selectedConversation === null ? (
@@ -137,62 +170,101 @@ export function MessagesView({
             />
           ) : messages.length === 0 ? (
             <StatePanel
-              title="This conversation is empty"
-              description="No supported messages were found in this thread."
+              title="This page is empty"
+              description="No supported messages on this page."
               className="m-4 flex-1"
             />
           ) : (
-            <div className="flex-1 overflow-auto px-2 py-2 sm:px-4">
-              {hasMore ? (
-                <div className="mb-2 text-center">
-                  <button
-                    type="button"
-                    onClick={onLoadMore}
-                    className="font-display text-[11px] uppercase tracking-[0.08em] text-teal hover:underline"
-                  >
-                    Load earlier messages
-                  </button>
-                </div>
-              ) : null}
-              <ol>
-                {messages.map((message, index) => (
-                  <li
-                    key={`${String(message.sentAt)}-${message.sender}-${index}`}
-                    className="border-b border-ink/20 px-2 py-3"
-                  >
-                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                      <span
-                        dir="auto"
-                        className="font-display text-xs text-teal"
+            <>
+              <div className="flex-1 space-y-2 overflow-auto px-3 py-3 sm:px-4">
+                {messages.map((message, index) => {
+                  const previous = index > 0 ? messages[index - 1] : null;
+                  const showDay =
+                    !previous ||
+                    dayKey(previous.sentAt) !== dayKey(message.sentAt);
+                  const outgoing = isOutgoingSender(
+                    message.sender,
+                    selectedConversation,
+                    senders,
+                  );
+
+                  return (
+                    <div key={`${String(message.sentAt)}-${message.sender}-${index}`}>
+                      {showDay ? (
+                        <div className="my-3 flex items-center gap-3">
+                          <span className="h-px flex-1 bg-ink/25" />
+                          <span className="shrink-0 font-display text-[10px] font-bold uppercase tracking-[0.1em] text-ink/70">
+                            {dayLabel(message.sentAt)}
+                          </span>
+                          <span className="h-px flex-1 bg-ink/25" />
+                        </div>
+                      ) : null}
+                      <div
+                        className={cn(
+                          "flex",
+                          outgoing ? "justify-end" : "justify-start",
+                        )}
                       >
-                        {message.sender}
-                      </span>
-                      <time
-                        dateTime={new Date(message.sentAt).toISOString()}
-                        className="meta-caps text-[10px] text-body"
-                      >
-                        {formatDateTime(message.sentAt)}
-                      </time>
+                        <article
+                          className={cn(
+                            "max-w-[min(100%,28rem)] border-2 border-ink px-3 py-2.5 shadow-panel",
+                            outgoing
+                              ? "bg-ink text-cream"
+                              : "bg-paper text-ink",
+                          )}
+                        >
+                          <UserText
+                            className={cn(
+                              "block font-body text-[11px] font-semibold",
+                              outgoing ? "text-teal" : "text-teal",
+                            )}
+                          >
+                            {message.sender}
+                          </UserText>
+                          {message.text ? (
+                            <UserText
+                              as="p"
+                              className={cn(
+                                "mt-1 whitespace-pre-wrap break-words font-body text-[15px] font-medium leading-6",
+                                outgoing ? "text-cream" : "text-ink",
+                              )}
+                            >
+                              {message.text}
+                            </UserText>
+                          ) : (
+                            <p
+                              className={cn(
+                                "mt-1 font-body text-sm",
+                                outgoing ? "text-cream/80" : "text-ink/75",
+                              )}
+                            >
+                              Media attachment
+                            </p>
+                          )}
+                          <time
+                            dateTime={new Date(message.sentAt).toISOString()}
+                            className={cn(
+                              "mt-2 block font-display text-[10px] font-bold uppercase tracking-[0.08em]",
+                              outgoing ? "text-cream/70" : "text-ink/60",
+                            )}
+                          >
+                            {formatDateTime(message.sentAt)}
+                          </time>
+                        </article>
+                      </div>
                     </div>
-                    {message.text ? (
-                      <p
-                        dir="auto"
-                        className="mt-1.5 whitespace-pre-wrap break-words font-body text-[15px] leading-6 text-ink"
-                      >
-                        {message.text}
-                      </p>
-                    ) : (
-                      <p className="mt-1.5 inline-flex items-center gap-2 font-body text-sm text-body">
-                        <Paperclip aria-hidden="true" className="size-3.5" />
-                        Media attachment
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            </div>
+                  );
+                })}
+              </div>
+              <PageControl
+                page={page}
+                totalPages={totalPages}
+                onChange={onChangePage}
+                disabled={loading}
+              />
+            </>
           )}
-        </section>
+        </ArchivePanel>
       </div>
     </div>
   );

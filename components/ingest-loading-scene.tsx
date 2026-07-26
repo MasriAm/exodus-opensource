@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 
 import { formatNumber } from "@/lib/format";
 import {
@@ -91,41 +91,43 @@ function Telemetry({
 }
 
 function SceneArt({
-  sceneId,
-  path,
+  scenes,
+  activeId,
   reduceMotion,
 }: {
-  sceneId: LoadingSceneId;
-  path: string;
+  scenes: ReadonlyArray<{ id: LoadingSceneId; path: string }>;
+  activeId: LoadingSceneId;
   reduceMotion: boolean | null;
 }) {
+  // Keep all GIFs mounted — remounting on scene change restarts them (blink).
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={sceneId}
-        className="relative mx-auto aspect-square w-full max-w-[200px] sm:max-w-[360px]"
-        initial={reduceMotion ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={reduceMotion ? undefined : { opacity: 0 }}
-        transition={{ duration: 0.35 }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={path}
-          alt=""
-          width={420}
-          height={420}
-          decoding="async"
-          className="h-full w-full object-contain"
-          style={{
-            maskImage:
-              "radial-gradient(circle at center, black 62%, transparent 100%)",
-            WebkitMaskImage:
-              "radial-gradient(circle at center, black 62%, transparent 100%)",
-          }}
-        />
-      </motion.div>
-    </AnimatePresence>
+    <div className="relative mx-auto aspect-square w-full max-w-[200px] sm:max-w-[360px]">
+      {scenes.map((scene) => {
+        const active = scene.id === activeId;
+        return (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={scene.id}
+            src={scene.path}
+            alt=""
+            width={420}
+            height={420}
+            decoding="async"
+            className={cn(
+              "absolute inset-0 h-full w-full object-contain transition-opacity duration-500",
+              active ? "opacity-100" : "pointer-events-none opacity-0",
+              reduceMotion && "transition-none",
+            )}
+            style={{
+              maskImage:
+                "radial-gradient(circle at center, black 62%, transparent 100%)",
+              WebkitMaskImage:
+                "radial-gradient(circle at center, black 62%, transparent 100%)",
+            }}
+          />
+        );
+      })}
+    </div>
   );
 }
 
@@ -152,15 +154,29 @@ export function IngestLoadingScene({
     };
   }, []);
 
-  const sceneId = sceneForProgress(progressPercent);
+  const targetSceneId = sceneForProgress(progressPercent);
+  const [stickySceneId, setStickySceneId] = useState<LoadingSceneId>(
+    targetSceneId,
+  );
+
+  useEffect(() => {
+    const order: LoadingSceneId[] = ["dusting", "scroll", "cauldron"];
+    setStickySceneId((current) => {
+      const currentIndex = order.indexOf(current);
+      const targetIndex = order.indexOf(targetSceneId);
+      // Only advance — never rewind when progress oscillates.
+      return targetIndex > currentIndex ? targetSceneId : current;
+    });
+  }, [targetSceneId]);
+
   const scene =
-    captions.scenes.find((entry) => entry.id === sceneId) ??
+    captions.scenes.find((entry) => entry.id === stickySceneId) ??
     captions.scenes[0] ??
     FALLBACK_LOADING_CAPTIONS.scenes[0];
 
   useEffect(() => {
     setCaptionIndex(0);
-  }, [sceneId]);
+  }, [stickySceneId]);
 
   useEffect(() => {
     if (reduceMotion) {
@@ -170,7 +186,7 @@ export function IngestLoadingScene({
       setCaptionIndex((value) => value + 1);
     }, CAPTION_ROTATE_MS);
     return () => window.clearInterval(timer);
-  }, [reduceMotion, sceneId]);
+  }, [reduceMotion, stickySceneId]);
 
   const caption = useMemo(
     () =>
@@ -198,25 +214,21 @@ export function IngestLoadingScene({
         </p>
 
         <SceneArt
-          sceneId={scene.id}
-          path={scene.path}
+          scenes={captions.scenes.map((entry) => ({
+            id: entry.id,
+            path: entry.path,
+          }))}
+          activeId={scene.id}
           reduceMotion={reduceMotion}
         />
 
         <div className="min-h-[3rem] w-full text-center sm:min-h-[3.5rem]">
-          <AnimatePresence mode="wait">
-            <motion.p
-              key={`${scene.id}-${caption}`}
-              dir="auto"
-              className="font-body text-base font-medium leading-7 text-ink sm:text-xl sm:leading-8"
-              initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
-              transition={{ duration: 0.35 }}
-            >
-              {caption}
-            </motion.p>
-          </AnimatePresence>
+          <p
+            dir="auto"
+            className="font-body text-base font-medium leading-7 text-ink sm:text-xl sm:leading-8"
+          >
+            {caption}
+          </p>
         </div>
 
         <Telemetry progress={progress} progressPercent={progressPercent} />

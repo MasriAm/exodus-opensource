@@ -93,11 +93,16 @@ export function HomeClient() {
         const summary = await api.ingest(file, (next) => {
           setProgress(next);
           markIngesting(next);
+          // Parse/load callbacks alternate stages; never let the bar or scene jump backward.
+          const stageFloor = STAGE_PERCENT[next.stage];
           const measuredPercent =
             next.total !== null && next.total > 0
               ? Math.round((next.done / next.total) * 100)
-              : STAGE_PERCENT[next.stage];
-          setProgressPercent(Math.min(98, Math.max(2, measuredPercent)));
+              : stageFloor;
+          const blended = Math.max(stageFloor, measuredPercent);
+          setProgressPercent((previous) =>
+            Math.min(98, Math.max(previous ?? 2, blended, 2)),
+          );
         });
         setProgress({
           stage: "finalizing",
