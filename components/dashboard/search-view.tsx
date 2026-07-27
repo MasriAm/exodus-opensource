@@ -158,12 +158,13 @@ export function SearchView({
           <div className="mb-4 flex flex-wrap items-baseline justify-between gap-3 border-b border-ink/20 pb-3">
             <h2 className="font-display text-[17px] font-bold text-ink">
               {pluralize(results.length, "match", "matches")}
+              {results.length >= 200 ? " (showing first 200)" : ""}
             </h2>
             <p className="font-display text-[11px] uppercase tracking-[0.08em] text-body">
               {pluralize(grouped.size, "conversation")}
             </p>
           </div>
-          <div className="space-y-8">
+          <div className="max-h-[min(62vh,36rem)] space-y-8 overflow-y-auto overscroll-contain pe-1">
             {[...grouped.entries()].map(([conversation, hits]) => (
               <section key={conversation}>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">

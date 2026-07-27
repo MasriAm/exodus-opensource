@@ -177,11 +177,53 @@ export class ZipEntryMap {
     }
 
     const path = normalizePath(requestedPath);
-    const entry = this.entries.get(path) ?? this.aliases.get(path);
-    if (entry === undefined) {
-      throw new Error(`ZIP entry not found: ${requestedPath}`);
+    const exact = this.entries.get(path) ?? this.aliases.get(path);
+    if (exact !== undefined) {
+      return exact;
     }
-    return entry;
+
+    // Soft resolve: Instagram URIs often omit the ZIP root folder.
+    const lower = path.toLowerCase();
+    const suffixHits = this.entryPaths.filter((entryPath) => {
+      const normalized = entryPath.toLowerCase();
+      return normalized === lower || normalized.endsWith(`/${lower}`);
+    });
+    if (suffixHits.length === 1) {
+      return this.entries.get(suffixHits[0])!;
+    }
+    if (suffixHits.length > 1) {
+      const preferred =
+        suffixHits.find((entryPath) =>
+          entryPath.toLowerCase().includes("your_instagram_activity"),
+        ) ??
+        suffixHits.find((entryPath) =>
+          entryPath.toLowerCase().includes("/messages/"),
+        ) ??
+        suffixHits[0];
+      return this.entries.get(preferred)!;
+    }
+
+    const base = path.includes("/") ? path.slice(path.lastIndexOf("/") + 1) : path;
+    const baseLower = base.toLowerCase();
+    if (baseLower.length > 0) {
+      const baseHits = this.entryPaths.filter(
+        (entryPath) =>
+          entryPath.slice(entryPath.lastIndexOf("/") + 1).toLowerCase() ===
+          baseLower,
+      );
+      if (baseHits.length === 1) {
+        return this.entries.get(baseHits[0])!;
+      }
+      if (baseHits.length > 1) {
+        const preferred =
+          baseHits.find((entryPath) =>
+            entryPath.toLowerCase().includes("your_instagram_activity"),
+          ) ?? baseHits[0];
+        return this.entries.get(preferred)!;
+      }
+    }
+
+    throw new Error(`ZIP entry not found: ${requestedPath}`);
   }
 }
 

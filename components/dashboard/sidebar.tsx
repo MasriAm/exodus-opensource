@@ -88,7 +88,7 @@ export function DashboardSidebar({
         className="relative z-[1] flex min-h-0 flex-1 flex-col"
       >
         {/* Scrollable mid section — Wrapped/Export stay pinned below. */}
-        <div className="flex gap-0 overflow-x-auto px-2 pb-2 lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:px-0 lg:pb-0">
+        <div className="sidebar-scroll flex gap-0 overflow-x-auto px-2 pb-2 lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:px-0 lg:pb-0">
           <div className="flex gap-0 lg:w-full lg:flex-col lg:border-t lg:border-dotted lg:border-white/15">
             {items.map(({ id, label }) => (
               <NavItem

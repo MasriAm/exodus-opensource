@@ -12,7 +12,6 @@ import {
 
 import { ArchivePanel } from "@/components/dashboard/archive-panel";
 import { PageControl } from "@/components/dashboard/page-control";
-import { VintagePhoto } from "@/components/capsule/vintage-photo";
 import { StatePanel } from "@/components/state-panel";
 import { UserText } from "@/components/user-text";
 import { stripInstagramFolderId } from "@/lib/instagram-labels";
@@ -119,10 +118,13 @@ function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
     ? `Media shared in ${conversationLabel}`
     : "Archive media";
   const isHeic = /\.heic$/i.test(fileName);
+  const looksLikeImage =
+    item.kind === "image" ||
+    /\.(avif|bmp|gif|jpe?g|png|webp)$/i.test(fileName);
 
   return (
     <article ref={containerRef} className="group min-w-0">
-      {item.kind === "image" && url && !error && !omittedFromExport ? (
+      {looksLikeImage && url && !error && !omittedFromExport ? (
         <button
           type="button"
           className="w-full cursor-pointer text-start transition-opacity hover:opacity-90"
@@ -139,55 +141,59 @@ function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
           </div>
         </button>
       ) : (
-        <div className="overflow-hidden border-2 border-ink bg-cream shadow-panel">
-          <div className="grid aspect-square place-items-center bg-paper/60 px-3">
-            {omittedFromExport ? (
-              <div className="text-center font-body text-sm text-ink/75">
-                <ImageIcon aria-hidden="true" className="mx-auto mb-2 size-6" />
-                Omitted from export
-              </div>
-            ) : !visible || (!url && !error) ? (
-              <LoaderCircle
-                aria-label="Loading media"
-                className="size-5 animate-spin text-ink/60 motion-reduce:animate-none"
-              />
-            ) : error || isHeic ? (
-              <div className="text-center font-body text-sm text-ink/75">
-                <FileQuestion aria-hidden="true" className="mx-auto mb-2 size-6" />
-                <span dir="auto" className="mt-1 block [unicode-bidi:isolate]">
-                  <bdi>{isHeic ? "HEIC — not previewable here" : fileName}</bdi>
-                </span>
-              </div>
-            ) : item.kind === "video" ? (
-              <video
-                src={url ?? undefined}
-                controls
-                preload="metadata"
-                aria-label={label}
-                className="max-h-full max-w-full bg-ink object-contain"
-              />
-            ) : item.kind === "audio" ? (
-              <div className="flex w-full flex-col items-center gap-3 px-2">
-                <Mic aria-hidden="true" className="size-6 text-teal" />
-                <audio
-                  src={url ?? undefined}
-                  controls
-                  preload="metadata"
-                  aria-label={label}
-                  className="w-full max-w-full"
+        <button
+          type="button"
+          disabled={!url || Boolean(error) || omittedFromExport}
+          className="w-full cursor-pointer text-start disabled:cursor-default"
+          onClick={() => {
+            if (url) {
+              onOpen?.(url, item);
+            }
+          }}
+        >
+          <div className="overflow-hidden border-2 border-ink bg-cream shadow-panel">
+            <div className="grid aspect-square place-items-center bg-paper/60 px-3">
+              {omittedFromExport ? (
+                <div className="text-center font-body text-sm text-ink/75">
+                  <ImageIcon aria-hidden="true" className="mx-auto mb-2 size-6" />
+                  Omitted from export
+                </div>
+              ) : !visible || (!url && !error) ? (
+                <LoaderCircle
+                  aria-label="Loading media"
+                  className="size-5 animate-spin text-ink/60 motion-reduce:animate-none"
                 />
-              </div>
-            ) : (
-              <a
-                href={url ?? undefined}
-                download={fileName}
-                className="font-display text-sm font-bold text-teal underline"
-              >
-                Open attachment
-              </a>
-            )}
+              ) : error || isHeic ? (
+                <div className="text-center font-body text-sm text-ink/75">
+                  <FileQuestion aria-hidden="true" className="mx-auto mb-2 size-6" />
+                  <span dir="auto" className="mt-1 block [unicode-bidi:isolate]">
+                    <bdi>{isHeic ? "HEIC — not previewable here" : fileName}</bdi>
+                  </span>
+                </div>
+              ) : item.kind === "video" ? (
+                <video
+                  src={url ?? undefined}
+                  preload="metadata"
+                  muted
+                  playsInline
+                  aria-label={label}
+                  className="max-h-full max-w-full bg-ink object-contain"
+                />
+              ) : item.kind === "audio" ? (
+                <div className="flex w-full flex-col items-center gap-3 px-2">
+                  <Mic aria-hidden="true" className="size-6 text-teal" />
+                  <span className="font-display text-[10px] font-bold uppercase tracking-[0.08em] text-ink/70">
+                    Voice note · click to open
+                  </span>
+                </div>
+              ) : (
+                <span className="font-display text-sm font-bold text-teal underline">
+                  Open attachment
+                </span>
+              )}
+            </div>
           </div>
-        </div>
+        </button>
       )}
       <div className="mt-2 min-w-0 px-0.5">
         <UserText className="block truncate font-body text-sm font-semibold text-ink">
@@ -275,24 +281,6 @@ export function MediaView({
       />
     );
   }
-  if (loading) {
-    return (
-      <StatePanel
-        kind="loading"
-        title="Finding media"
-        description="The worker is indexing archive attachments."
-      />
-    );
-  }
-  if (totalCount === 0) {
-    return (
-      <StatePanel
-        icon={ImageIcon}
-        title="No media match"
-        description="Nothing shows for these filters — or this export has no supported media."
-      />
-    );
-  }
 
   const bucketLabel =
     BUCKETS.find((entry) => entry.id === kind)?.label ?? "Media";
@@ -328,43 +316,52 @@ export function MediaView({
         })}
       </div>
 
-      <ArchivePanel
-        title={`${bucketLabel} // ${pluralize(totalCount, "file")}`}
-        subtitle="Images, voice notes, and video stay in separate boxes so tiles don’t collide. Opened on demand from your ZIP."
-        bodyClassName="!p-0"
-      >
-        {items.length === 0 ? (
-          <p className="p-5 font-body text-sm text-ink/75">
-            No {kind === "audio" ? "voice notes" : kind} match these filters.
-          </p>
-        ) : (
-          <div
-            className={cn(
-              "grid gap-4 p-4",
-              kind === "audio"
-                ? "grid-cols-1 sm:grid-cols-2"
-                : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4",
-            )}
-          >
-            {items.map((item) => (
-              <LazyMedia
-                key={`${item.zipPath}-${item.kind}`}
-                item={item}
-                readBlob={readBlob}
-                onOpen={(url, mediaItem) => {
-                  void openLightbox(url, mediaItem);
-                }}
-              />
-            ))}
-          </div>
-        )}
-        <PageControl
-          page={page}
-          totalPages={totalPages}
-          onChange={onChangePage}
-          disabled={loading}
+      {loading ? (
+        <StatePanel
+          kind="loading"
+          title="Finding media"
+          description="The worker is indexing archive attachments."
         />
-      </ArchivePanel>
+      ) : (
+        <ArchivePanel
+          title={`${bucketLabel} // ${pluralize(totalCount, "file")}`}
+          subtitle="Images, voice notes, and video stay in separate boxes so tiles don’t collide. Click a tile to open it."
+          bodyClassName="!p-0"
+        >
+          {items.length === 0 || totalCount === 0 ? (
+            <p className="p-5 font-body text-sm text-ink/75">
+              No {kind === "audio" ? "voice notes" : kind} match these filters —
+              try Images or clear the person filter.
+            </p>
+          ) : (
+            <div
+              className={cn(
+                "grid gap-4 p-4",
+                kind === "audio"
+                  ? "grid-cols-1 sm:grid-cols-2"
+                  : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4",
+              )}
+            >
+              {items.map((item) => (
+                <LazyMedia
+                  key={`${item.zipPath}-${item.kind}`}
+                  item={item}
+                  readBlob={readBlob}
+                  onOpen={(url, mediaItem) => {
+                    void openLightbox(url, mediaItem);
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          <PageControl
+            page={page}
+            totalPages={totalPages}
+            onChange={onChangePage}
+            disabled={loading}
+          />
+        </ArchivePanel>
+      )}
 
       {lightbox ? (
         <div
@@ -382,9 +379,24 @@ export function MediaView({
           >
             <X className="size-6" />
           </button>
-          <div onClick={(event) => event.stopPropagation()}>
-            <VintagePhoto className="max-h-[85vh] max-w-[min(90vw,40rem)]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+          <div
+            className="max-h-[85vh] max-w-[min(90vw,40rem)] border-2 border-cream bg-ink p-2"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {lightbox.item.kind === "video" ? (
+              <video
+                src={lightbox.url}
+                controls
+                autoPlay
+                className="max-h-[80vh] w-full object-contain"
+              />
+            ) : lightbox.item.kind === "audio" ? (
+              <div className="flex flex-col items-center gap-4 bg-cream p-8">
+                <Mic className="size-8 text-teal" />
+                <audio src={lightbox.url} controls autoPlay className="w-full" />
+              </div>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={lightbox.url}
                 alt={
@@ -392,9 +404,9 @@ export function MediaView({
                     ? `Media from ${stripInstagramFolderId(lightbox.item.conversation)}`
                     : "Archive media"
                 }
-                className={cn("target-photo max-h-[70vh] w-full object-contain")}
+                className="max-h-[80vh] w-full object-contain"
               />
-            </VintagePhoto>
+            )}
           </div>
         </div>
       ) : null}

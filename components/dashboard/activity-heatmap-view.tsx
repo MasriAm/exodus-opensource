@@ -247,8 +247,9 @@ export function ActivityHeatmapView({
                   gridAutoFlow: "column",
                 }}
               >
-                {cells.flatMap((row, weekday) =>
-                  row.map((cell, week) => {
+                {Array.from({ length: weeks }, (_, week) =>
+                  Array.from({ length: 7 }, (_, weekday) => {
+                    const cell = cells[weekday][week];
                     if (!cell) {
                       return (
                         <span

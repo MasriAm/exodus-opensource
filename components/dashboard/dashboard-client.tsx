@@ -232,6 +232,10 @@ export function DashboardClient({ api }: DashboardClientProps) {
     null,
   );
   const [messages, setMessages] = useState<MessageViewItem[]>([]);
+  const [threadSenders, setThreadSenders] = useState<
+    Array<{ sender: string; messageCount: number }>
+  >([]);
+  const [archiveSelfHint, setArchiveSelfHint] = useState<string | null>(null);
   const [messagesPage, setMessagesPage] = useState(1);
   const [messagesTotalPages, setMessagesTotalPages] = useState(1);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -541,6 +545,12 @@ export function DashboardClient({ api }: DashboardClientProps) {
   }, [effectiveFilter]);
 
   useEffect(() => {
+    // Person filter + "Other" often yields an empty page and hid the type tabs.
+    setMediaKind("image");
+    setMediaPage(1);
+  }, [filter.conversation]);
+
+  useEffect(() => {
     if (activeView !== "messages" || selectedConversation === null) {
       return;
     }
@@ -564,6 +574,8 @@ export function DashboardClient({ api }: DashboardClientProps) {
           return;
         }
         setMessages(result.items.map(mapMessage));
+        setThreadSenders(result.threadSenders);
+        setArchiveSelfHint(result.archiveSelfHint);
         setMessagesTotalPages(
           Math.max(1, Math.ceil(result.totalCount / MESSAGES_PAGE_SIZE)),
         );
@@ -688,8 +700,15 @@ export function DashboardClient({ api }: DashboardClientProps) {
       setSearchLoading(true);
       setSearchError(null);
       setHasSearched(true);
+      // Search ignores the sticky person filter from Media/People so hits aren't empty.
+      const searchFilter = {
+        fromMs: effectiveFilter.fromMs,
+        toMs: effectiveFilter.toMs,
+        platform: effectiveFilter.platform,
+        conversation: null as string | null,
+      };
       void api
-        .query("search", { term, limit: 200, offset: 0, filter: effectiveFilter })
+        .query("search", { term, limit: 200, offset: 0, filter: searchFilter })
         .then((result) => {
           if (searchSeqRef.current !== seq) {
             return;
@@ -715,7 +734,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
           setSearchLoading(false);
         });
     },
-    [api, effectiveFilter],
+    [api, effectiveFilter.fromMs, effectiveFilter.toMs, effectiveFilter.platform],
   );
 
   const readMediaBlob = useCallback(
@@ -935,6 +954,8 @@ export function DashboardClient({ api }: DashboardClientProps) {
             conversations={conversations}
             selectedConversation={selectedConversation}
             messages={messages}
+            threadSenders={threadSenders}
+            archiveSelfHint={archiveSelfHint}
             loading={messagesLoading}
             error={messagesError}
             page={messagesPage}

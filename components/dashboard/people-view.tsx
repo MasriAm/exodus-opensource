@@ -104,22 +104,30 @@ function YearSparkline({
   const max = Math.max(...rows.map((row) => row.messageCount), 1);
   return (
     <div>
-      <p className="meta-caps mb-2">Messages per year</p>
-      <div className="flex h-16 items-end gap-1.5">
+      <p className="meta-caps mb-1">Messages per year</p>
+      <p className="mb-2 font-body text-[12px] text-ink/70">
+        Bar height = volume that year. The number under each bar is the year
+        (last two digits). Hover a bar for the exact count.
+      </p>
+      <div className="flex h-20 items-end gap-1.5">
         {rows.map((row) => (
           <div
             key={row.year}
-            className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
+            className="group relative flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
           >
+            <span className="pointer-events-none absolute -top-1 hidden rounded bg-ink px-1.5 py-0.5 font-display text-[10px] font-bold text-cream group-hover:block">
+              {formatNumber(row.messageCount)} msgs
+            </span>
             <div
-              className="w-full max-w-[2rem] bg-[color-mix(in_srgb,var(--teal)_55%,var(--paper))]"
+              className="w-full max-w-[2rem] bg-[color-mix(in_srgb,var(--teal)_55%,var(--paper))] transition-opacity group-hover:opacity-90"
               style={{
                 height: `${Math.max(10, Math.round((row.messageCount / max) * 100))}%`,
               }}
-              title={`${row.year}: ${formatNumber(row.messageCount)}`}
+              title={`${row.year}: ${formatNumber(row.messageCount)} messages`}
+              aria-label={`${row.year}: ${formatNumber(row.messageCount)} messages`}
             />
             <span className="font-display text-[9px] font-bold text-ink/75">
-              {String(row.year).slice(-2)}
+              ’{String(row.year).slice(-2)}
             </span>
           </div>
         ))}

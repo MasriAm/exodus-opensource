@@ -444,18 +444,22 @@ const WRAPPED_PROFILE_HISTORY_SQL = `
 
 const WRAPPED_FIRST_IMAGE_SQL = `
   SELECT
-    zip_path,
-    conversation,
+    media.zip_path,
+    media.conversation,
     CASE
-      WHEN taken_at IS NULL THEN NULL
-      ELSE epoch(taken_at) * 1000.0
+      WHEN media.taken_at IS NULL THEN NULL
+      ELSE epoch(media.taken_at) * 1000.0
     END AS taken_at_ms
   FROM media
-  WHERE kind = 'image'
-    AND conversation IS NOT NULL
-    AND zip_path IS NOT NULL
-    AND zip_path NOT LIKE 'omitted://%'
-  ORDER BY taken_at ASC NULLS LAST, rowid ASC
+  LEFT JOIN messages
+    ON messages.media_ref = media.zip_path
+  WHERE media.kind = 'image'
+    AND media.conversation IS NOT NULL
+    AND media.zip_path IS NOT NULL
+    AND media.zip_path NOT LIKE 'omitted://%'
+  ORDER BY
+    COALESCE(messages.sent_at, media.taken_at) ASC NULLS LAST,
+    media.rowid ASC
   LIMIT 8
 `;
 
@@ -691,6 +695,38 @@ export async function messagesPage(
   );
   const totalCount = readNumber(countRow, "total");
 
+  const senderRows = await preparedRows(
+    connection,
+    `
+      SELECT
+        sender,
+        CAST(COUNT(*) AS DOUBLE) AS message_count
+      FROM messages
+      WHERE ${filter.clause}
+      GROUP BY sender
+      ORDER BY COUNT(*) DESC, sender ASC
+    `,
+    filter.params,
+  );
+  const threadSenders = senderRows.map((row) => ({
+    sender: readString(row, "sender"),
+    messageCount: readNumber(row, "message_count"),
+  }));
+
+  const selfHintRows = await preparedRows(
+    connection,
+    `
+      SELECT sender
+      FROM messages
+      GROUP BY sender
+      ORDER BY COUNT(DISTINCT conversation) DESC, COUNT(*) DESC, sender ASC
+      LIMIT 1
+    `,
+    [],
+  );
+  const archiveSelfHint =
+    selfHintRows.length > 0 ? readString(selfHintRows[0], "sender") : null;
+
   // Offset mode: chronological pages for the Archive Terminal pager.
   if (params.offset !== undefined && params.offset !== null) {
     const rows = await preparedRows(
@@ -718,6 +754,8 @@ export async function messagesPage(
       totalCount,
       offset,
       limit,
+      threadSenders,
+      archiveSelfHint,
     };
   }
 
@@ -764,6 +802,8 @@ export async function messagesPage(
     totalCount,
     offset: 0,
     limit,
+    threadSenders,
+    archiveSelfHint,
   };
 }
 

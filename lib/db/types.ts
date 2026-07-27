@@ -93,6 +93,10 @@ export interface MessagesPageResult {
   totalCount: number;
   offset: number;
   limit: number;
+  /** Full-thread sender roster for stable you/them alignment across pages. */
+  threadSenders: Array<{ sender: string; messageCount: number }>;
+  /** Sender that appears in the most conversations — usually you. */
+  archiveSelfHint: string | null;
 }
 
 export interface CountsResult extends RowCounts {

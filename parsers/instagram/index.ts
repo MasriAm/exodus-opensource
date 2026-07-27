@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  conversationStorageKey,
   isInstagramSystemMessage,
   stripInstagramFolderId,
 } from "../../lib/instagram-labels";
@@ -179,7 +180,7 @@ function messageEntryInfo(path: string): MessageEntryInfo | null {
 
   return {
     path,
-    conversation: stripInstagramFolderId(
+    conversation: conversationStorageKey(
       fixMojibake(segments[messagesIndex + 2]),
     ),
     page: Number.parseInt(match[1], 10),
@@ -395,8 +396,9 @@ async function parseMessages(
     const raw = await readJsonEntry(entries, entry.path);
     const repaired = repairInstagramStrings(raw);
     const thread = validateJson(messageThreadSchema, repaired, entry.path);
-    // Folder slug is `username_numericId` — keep the handle, drop the id.
-    const conversation = stripInstagramFolderId(entry.conversation);
+    // Folder slug is `username_numericId` — keep the handle, drop the id
+    // (except "Instagram User" deleted threads which keep the id).
+    const conversation = conversationStorageKey(entry.conversation);
 
     for (const message of thread.messages) {
       const attachments = collectAttachments(message).map(

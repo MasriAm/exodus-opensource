@@ -6,9 +6,9 @@ import { ArchivePanel } from "@/components/dashboard/archive-panel";
 import { PageControl } from "@/components/dashboard/page-control";
 import { StatePanel } from "@/components/state-panel";
 import { UserText } from "@/components/user-text";
-import { stripInstagramFolderId } from "@/lib/instagram-labels";
+import { displayConversationLabel } from "@/lib/instagram-labels";
 import { formatDateTime, pluralize } from "@/lib/format";
-import { isOutgoingSender } from "@/lib/ui-text";
+import { isOutgoingSender, resolveSelfSender } from "@/lib/ui-text";
 import { cn } from "@/lib/utils";
 
 export type ConversationItem = {
@@ -26,10 +26,17 @@ export type MessageItem = {
   mediaRef: string | null;
 };
 
+type ThreadSender = {
+  sender: string;
+  messageCount: number;
+};
+
 type MessagesViewProps = {
   conversations: ConversationItem[];
   selectedConversation: string | null;
   messages: MessageItem[];
+  threadSenders?: ThreadSender[];
+  archiveSelfHint?: string | null;
   loading: boolean;
   error: string | null;
   page: number;
@@ -57,6 +64,8 @@ export function MessagesView({
   conversations,
   selectedConversation,
   messages,
+  threadSenders = [],
+  archiveSelfHint = null,
   loading,
   error,
   page,
@@ -83,10 +92,13 @@ export function MessagesView({
     );
   }
 
-  const senders = messages.map((message) => message.sender);
   const selectedMeta = conversations.find(
     (entry) => entry.conversation === selectedConversation,
   );
+  const selfSender =
+    selectedConversation !== null
+      ? resolveSelfSender(selectedConversation, threadSenders, archiveSelfHint)
+      : null;
 
   return (
     <div className="space-y-5">
@@ -136,7 +148,7 @@ export function MessagesView({
         <ArchivePanel
           title={
             selectedConversation
-              ? `DMs: ${stripInstagramFolderId(selectedConversation)}`
+              ? `DMs: ${displayConversationLabel(selectedConversation)}`
               : "Choose a conversation"
           }
           subtitle={
@@ -185,7 +197,9 @@ export function MessagesView({
                   const outgoing = isOutgoingSender(
                     message.sender,
                     selectedConversation,
-                    senders,
+                    threadSenders,
+                    selfSender,
+                    archiveSelfHint,
                   );
 
                   return (

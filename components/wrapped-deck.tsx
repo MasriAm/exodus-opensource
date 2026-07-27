@@ -297,7 +297,7 @@ export function WrappedDeck({
             <p className="font-display text-sm font-bold tracking-[0.08em] text-ink">
               YOUR TIME CAPSULE
             </p>
-            <div className="mt-6 grid w-full max-w-lg grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-2.5">
+            <div className="mt-6 grid w-full max-w-xl grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-2.5">
               {[
                 { label: "Messages", value: data.totalMessages },
                 { label: "Media", value: data.totalMedia },
@@ -306,8 +306,11 @@ export function WrappedDeck({
                   value: yearsSpanned(data.activeFromMs, data.activeToMs),
                 },
               ].map((stat) => (
-                <CapsuleCard key={stat.label} className="p-4 text-start sm:p-5">
-                  <p className="font-display text-3xl font-bold text-ink sm:text-4xl">
+                <CapsuleCard
+                  key={stat.label}
+                  className="min-w-0 overflow-visible p-4 text-start sm:p-5"
+                >
+                  <p className="font-display text-[clamp(1.35rem,4vw,2.25rem)] font-bold leading-none tracking-tight text-ink tabular-nums">
                     <CountUp value={stat.value} />
                   </p>
                   <p className="meta-caps mt-2 text-ink/80">{stat.label}</p>

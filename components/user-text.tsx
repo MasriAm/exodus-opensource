@@ -1,6 +1,6 @@
 import type { HTMLAttributes, ReactNode } from "react";
 
-import { stripInstagramFolderId } from "@/lib/instagram-labels";
+import { displayConversationLabel } from "@/lib/instagram-labels";
 import { containsArabic } from "@/lib/ui-text";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +30,11 @@ export function UserText({
       ? String(children)
       : null;
   const text =
-    raw !== null && !keepFolderId ? stripInstagramFolderId(raw) : raw;
+    raw === null
+      ? null
+      : keepFolderId
+        ? raw
+        : displayConversationLabel(raw);
   const arabic = text !== null ? containsArabic(text) : forceBody;
 
   return (

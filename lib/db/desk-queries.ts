@@ -1131,7 +1131,6 @@ export async function footprint(
             nullif(trim(json_extract_string(payload, '$.name')), '')
           ) IS NOT NULL
         ORDER BY occurred_at DESC
-        LIMIT 100
       `,
       evt.params,
     )
@@ -1244,6 +1243,21 @@ function personalInfoFields(payloadJson: string): FootprintPersonalInfoField[] {
       ? (record.data as Record<string, unknown>)
       : record;
 
+  // Prefer Instagram string_map_data / string_list_data human fields.
+  const stringMap = data.string_map_data;
+  if (typeof stringMap === "object" && stringMap !== null && !Array.isArray(stringMap)) {
+    const fields: FootprintPersonalInfoField[] = [];
+    for (const [key, entry] of Object.entries(stringMap as Record<string, unknown>)) {
+      const display = personalInfoValue(entry);
+      if (display !== null) {
+        fields.push({ key, value: display });
+      }
+    }
+    if (fields.length > 0) {
+      return fields;
+    }
+  }
+
   const fields: FootprintPersonalInfoField[] = [];
   for (const [key, value] of Object.entries(data)) {
     if (
@@ -1251,7 +1265,11 @@ function personalInfoFields(payloadJson: string): FootprintPersonalInfoField[] {
       key === "timestamp_ms" ||
       key === "creation_timestamp" ||
       key === "created_timestamp" ||
-      key === "path"
+      key === "path" ||
+      key === "media_map_data" ||
+      key === "cross_post_source" ||
+      key === "media_metadata" ||
+      key === "uri"
     ) {
       continue;
     }
@@ -1269,7 +1287,15 @@ function personalInfoValue(value: unknown): string | null {
   }
   if (typeof value === "string") {
     const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
+    if (
+      trimmed.length === 0 ||
+      trimmed.startsWith("$") ||
+      trimmed.startsWith("{") ||
+      trimmed.startsWith("[")
+    ) {
+      return null;
+    }
+    return trimmed;
   }
   if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
@@ -1283,13 +1309,13 @@ function personalInfoValue(value: unknown): string | null {
   if (typeof value === "object") {
     const nested = value as Record<string, unknown>;
     if (typeof nested.value === "string" && nested.value.trim().length > 0) {
-      return nested.value.trim();
+      const trimmed = nested.value.trim();
+      if (!trimmed.startsWith("$") && !trimmed.startsWith("{")) {
+        return trimmed;
+      }
     }
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return null;
-    }
+    // Never dump raw nested JSON into the footprint UI.
+    return null;
   }
   return null;
 }

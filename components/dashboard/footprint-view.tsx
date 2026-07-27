@@ -7,7 +7,7 @@ import { ArchivePanel } from "@/components/dashboard/archive-panel";
 import { StatePanel } from "@/components/state-panel";
 import { UserText } from "@/components/user-text";
 import { formatDate, formatNumber, pluralize } from "@/lib/format";
-import { followingWithoutFollowBack } from "@/lib/follow-facts";
+import { followingWithoutFollowBack, uniqueFollowEvents } from "@/lib/follow-facts";
 import type { FootprintResult } from "@/lib/db/types";
 import { cn } from "@/lib/utils";
 
@@ -79,6 +79,28 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
     () => followingWithoutFollowBack(data?.followEvents ?? []),
     [data],
   );
+  const uniqueFollowers = useMemo(
+    () => uniqueFollowEvents(data?.followEvents ?? [], "follower"),
+    [data],
+  );
+  const uniqueFollowing = useMemo(
+    () => uniqueFollowEvents(data?.followEvents ?? [], "following"),
+    [data],
+  );
+  const uniqueAllFollows = useMemo(() => {
+    const seen = new Set<string>();
+    const rows = [...uniqueFollowers, ...uniqueFollowing];
+    const result: typeof rows = [];
+    for (const row of rows) {
+      const key = `${row.kind}:${row.username.trim().toLocaleLowerCase()}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      result.push(row);
+    }
+    return result;
+  }, [uniqueFollowers, uniqueFollowing]);
 
   const visibleComments = useMemo(() => {
     if (!data) {
@@ -106,9 +128,11 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
     const base =
       followKind === "not_back"
         ? notFollowingBack
-        : data.followEvents.filter(
-            (row) => followKind === "all" || row.kind === followKind,
-          );
+        : followKind === "follower"
+          ? uniqueFollowers
+          : followKind === "following"
+            ? uniqueFollowing
+            : uniqueAllFollows;
     const needle = followQuery.trim().toLocaleLowerCase();
     if (!needle) {
       return base;
@@ -116,7 +140,15 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
     return base.filter((row) =>
       row.username.toLocaleLowerCase().includes(needle),
     );
-  }, [data, followKind, followQuery, notFollowingBack]);
+  }, [
+    data,
+    followKind,
+    followQuery,
+    notFollowingBack,
+    uniqueAllFollows,
+    uniqueFollowers,
+    uniqueFollowing,
+  ]);
 
   const shownFollows = visibleFollows.slice(0, followLimit);
   const shownComments = visibleComments.slice(0, commentLimit);
@@ -253,19 +285,20 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
         </div>
       ) : null}
 
-      {data.personalInfo.length > 0 ? (
+      {data.personalInfo.some((row) => row.fields.length > 0) ? (
         <ArchivePanel
           title="Personal information"
-          subtitle="Fields Instagram listed under personal information in the export."
+          subtitle="Readable fields from Instagram's personal information export."
         >
           <ul className="space-y-3">
-            {data.personalInfo.map((row) => (
+            {data.personalInfo
+              .filter((row) => row.fields.length > 0)
+              .map((row) => (
               <li
                 key={`${row.occurredAtMs}-${row.path}`}
                 className="border border-ink/20 bg-receipt px-3 py-3"
               >
                 <p className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/75">
-                  {row.path || "personal_information"} ·{" "}
                   {formatDate(row.occurredAtMs)}
                 </p>
                 <dl className="mt-2 space-y-1">
@@ -306,10 +339,14 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
               }}
             >
               <option value="all">
-                All ({formatNumber(data.followEvents.length)})
+                All ({formatNumber(uniqueAllFollows.length)})
               </option>
-              <option value="follower">Followers</option>
-              <option value="following">Following</option>
+              <option value="follower">
+                Followers ({formatNumber(uniqueFollowers.length)})
+              </option>
+              <option value="following">
+                Following ({formatNumber(uniqueFollowing.length)})
+              </option>
               <option value="not_back">
                 Not following back ({formatNumber(notFollowingBack.length)})
               </option>

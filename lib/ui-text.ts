@@ -21,54 +21,109 @@ export function pluralize(
   return `${formatted} ${count === 1 ? singular : plural}`;
 }
 
+export function normalizeSenderKey(value: string): string {
+  return value
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function matchesConversationTitle(senderKey: string, conversationKey: string): boolean {
+  if (!senderKey || !conversationKey) {
+    return false;
+  }
+  return (
+    senderKey === conversationKey ||
+    conversationKey.includes(senderKey) ||
+    senderKey.includes(conversationKey)
+  );
+}
+
 /**
- * Rough "you vs them" for bubble alignment.
- * 1:1 threads: the conversation title is usually the other person.
- * Groups: the most frequent sender on the page is treated as you.
+ * Infer which sender is "you" for a thread from the full sender roster
+ * (not a single page). Conversation title is treated as the other party in 1:1.
+ * For groups, prefer archiveSelfHint (sender in the most conversations).
+ */
+export function resolveSelfSender(
+  conversation: string,
+  threadSenders: ReadonlyArray<{ sender: string; messageCount: number }>,
+  archiveSelfHint?: string | null,
+): string | null {
+  if (threadSenders.length === 0) {
+    return null;
+  }
+  const conversationKey = normalizeSenderKey(conversation);
+  const ranked = [...threadSenders].sort(
+    (left, right) =>
+      right.messageCount - left.messageCount ||
+      left.sender.localeCompare(right.sender),
+  );
+
+  const notTitle = ranked.filter(
+    (row) => !matchesConversationTitle(normalizeSenderKey(row.sender), conversationKey),
+  );
+
+  // 1:1: the participant who is not the conversation title is you.
+  if (ranked.length <= 2) {
+    return notTitle[0]?.sender ?? null;
+  }
+
+  // Groups: prefer the archive-wide "you" hint when they appear in this thread.
+  if (archiveSelfHint) {
+    const hintKey = normalizeSenderKey(archiveSelfHint);
+    const match = ranked.find(
+      (row) => normalizeSenderKey(row.sender) === hintKey,
+    );
+    if (match) {
+      return match.sender;
+    }
+  }
+
+  // Fallback: most active sender who is not the group title.
+  return notTitle[0]?.sender ?? ranked[0]?.sender ?? null;
+}
+
+/**
+ * Decide if a bubble is outgoing ("you").
+ * Prefer an explicit selfSender resolved from the full thread roster.
  */
 export function isOutgoingSender(
   sender: string,
   conversation: string,
-  pageSenders: readonly string[],
+  threadSenders: ReadonlyArray<{ sender: string; messageCount: number }> | readonly string[],
+  selfSender?: string | null,
+  archiveSelfHint?: string | null,
 ): boolean {
-  const normalize = (value: string) =>
-    value
-      .trim()
-      .toLocaleLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, "");
-  const s = normalize(sender);
-  const c = normalize(conversation);
-  const uniqueSenders = [...new Set(pageSenders.filter(Boolean))];
-  const unique = [...new Set(uniqueSenders.map(normalize).filter(Boolean))];
-
-  if (unique.length <= 2) {
-    // Thread title often matches the other person (slug or display name).
-    if (c && (s === c || c.includes(s) || s.includes(c))) {
-      return false;
-    }
-    // Otherwise prefer Latin-script participant as "you" in bilingual chats.
-    const latinSelf = uniqueSenders.find(
-      (entry) => !containsArabic(entry) && /[A-Za-z]/.test(entry),
-    );
-    if (latinSelf) {
-      return normalize(latinSelf) === s;
-    }
-    return true;
+  const s = normalizeSenderKey(sender);
+  if (!s) {
+    return false;
   }
 
-  const counts = new Map<string, number>();
-  for (const entry of pageSenders) {
-    const key = normalize(entry);
-    if (!key) continue;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+  const roster: Array<{ sender: string; messageCount: number }> = Array.isArray(
+    threadSenders,
+  )
+    ? typeof threadSenders[0] === "string"
+      ? (threadSenders as readonly string[]).map((entry) => ({
+          sender: entry,
+          messageCount: 1,
+        }))
+      : [...(threadSenders as ReadonlyArray<{ sender: string; messageCount: number }>)]
+    : [];
+
+  const self =
+    selfSender?.trim() ||
+    resolveSelfSender(conversation, roster, archiveSelfHint) ||
+    null;
+
+  if (self) {
+    return s === normalizeSenderKey(self);
   }
-  let top: string | null = null;
-  let topCount = -1;
-  for (const [key, count] of counts) {
-    if (count > topCount) {
-      top = key;
-      topCount = count;
-    }
+
+  const conversationKey = normalizeSenderKey(conversation);
+  if (conversationKey && matchesConversationTitle(s, conversationKey)) {
+    return false;
   }
-  return top !== null && s === top;
+
+  // Last resort without a roster: treat as outgoing.
+  return true;
 }
