@@ -707,6 +707,7 @@ export async function personDetail(
           conversation
         FROM media
         WHERE ${med.clause}
+          AND kind = 'image'
           AND zip_path NOT LIKE 'omitted://%'
         ORDER BY taken_at DESC NULLS LAST, rowid DESC
         LIMIT 24

@@ -61,6 +61,16 @@ async function exists(path) {
   }
 }
 
+/** Real extension WASM is hundreds of KB; tiny stubs are treated as missing. */
+async function usableExtension(path) {
+  if (!(await exists(path))) {
+    return false;
+  }
+  const { stat } = await import("node:fs/promises");
+  const info = await stat(path);
+  return info.size > 50_000;
+}
+
 const version = await duckdbVersion();
 if (!version.startsWith("v")) {
   throw new Error(`Unexpected DuckDB version string: ${version}`);
@@ -72,7 +82,7 @@ for (const platform of PLATFORMS) {
   for (const extension of EXTENSIONS) {
     const directory = join(destinationRoot, version, platform);
     const file = join(directory, `${extension}.duckdb_extension.wasm`);
-    if (await exists(file)) {
+    if (await usableExtension(file)) {
       present += 1;
       continue;
     }
@@ -81,8 +91,14 @@ for (const platform of PLATFORMS) {
     if (!response.ok) {
       throw new Error(`Could not download ${url}: ${response.status}`);
     }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.byteLength < 50_000) {
+      throw new Error(
+        `Downloaded ${url} looks truncated (${bytes.byteLength} bytes).`,
+      );
+    }
     await mkdir(directory, { recursive: true });
-    await writeFile(file, Buffer.from(await response.arrayBuffer()));
+    await writeFile(file, bytes);
     downloaded += 1;
   }
 }

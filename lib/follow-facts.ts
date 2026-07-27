@@ -8,8 +8,26 @@ export type FollowKindRow = {
   occurredAtMs: number;
 };
 
+/** Prefer the Instagram handle; fall back to the path segment of a profile URL. */
+export function normalizeFollowUsername(value: string): string {
+  let raw = value.trim();
+  if (!raw) {
+    return "";
+  }
+  const hrefMatch = raw.match(/instagram\.com\/(?:_u\/)?([^/?#]+)/i);
+  if (hrefMatch) {
+    raw = hrefMatch[1];
+  }
+  try {
+    raw = decodeURIComponent(raw);
+  } catch {
+    // Keep the undecoded handle when it is not URI-encoded.
+  }
+  return raw.replace(/^@+/, "").trim().toLocaleLowerCase();
+}
+
 function usernameKey(value: string): string {
-  return value.trim().toLocaleLowerCase();
+  return normalizeFollowUsername(value);
 }
 
 /** Unique usernames for a follow kind (latest event wins for display). */

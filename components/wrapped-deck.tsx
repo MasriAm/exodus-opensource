@@ -56,7 +56,9 @@ export type WrappedDeckData = {
   topContacts: Array<{ conversation: string; count: number }>;
   messagesByHour: Array<{ hour: number; count: number }>;
   peakHour: number | null;
+  /** Message count at the peak hour (not a fixed 2–4am window). */
   threeAmEraMessages: number;
+  busiestDay: { date: string; messageCount: number } | null;
   topWords: Array<{ word: string; count: number }>;
   firstMessage: {
     text: string | null;
@@ -129,6 +131,18 @@ function yearsSpanned(fromMs: number | null, toMs: number | null): number {
     return 1;
   }
   return Math.max(1, Math.round((toMs - fromMs) / (365.25 * 86_400_000)));
+}
+
+/** "3am", "3pm", "12pm" — used for the peak-hour era title. */
+function formatHourClock(hour: number): string {
+  const normalized = ((Math.round(hour) % 24) + 24) % 24;
+  const suffix = normalized < 12 ? "am" : "pm";
+  const twelve = normalized % 12 === 0 ? 12 : normalized % 12;
+  return `${twelve}${suffix}`;
+}
+
+function peakEraTitle(hour: number): string {
+  return `The ${formatHourClock(hour)} Era`;
 }
 
 function CountUp({ value }: { value: number }) {
@@ -408,6 +422,58 @@ export function WrappedDeck({
       });
     }
 
+    if (data.busiestDay) {
+      built.push({
+        id: "busiest-day",
+        render: () => (
+          <SlideShell
+            title={<SlideTitle accent="coral">Busiest Day</SlideTitle>}
+            subline={
+              <>
+                One calendar day carried{" "}
+                <Mark>{formatNumber(data.busiestDay!.messageCount)}</Mark>{" "}
+                messages.
+              </>
+            }
+          >
+            <Receipt
+              title="Peak day"
+              rows={[
+                { label: "Date", value: data.busiestDay!.date },
+                {
+                  label: "Messages",
+                  value: formatNumber(data.busiestDay!.messageCount),
+                },
+              ]}
+            />
+          </SlideShell>
+        ),
+      });
+    }
+
+    if (data.longestStreakDays > 0) {
+      built.push({
+        id: "streak",
+        render: () => (
+          <SlideShell
+            title={<SlideTitle accent="teal">The Streak</SlideTitle>}
+            subline="Longest run of consecutive days with at least one message."
+          >
+            <div className="flex w-full justify-center">
+              <CapsuleCard className="flex w-full max-w-md flex-col items-center px-8 py-12 text-center sm:px-12 sm:py-14">
+                <p className="font-display text-[clamp(4.5rem,16vw,8rem)] font-bold leading-none tracking-tight text-teal tabular-nums">
+                  <CountUp value={data.longestStreakDays} />
+                </p>
+                <p className="meta-caps mt-6 text-base tracking-[0.12em] text-ink sm:text-lg">
+                  days in a row
+                </p>
+              </CapsuleCard>
+            </div>
+          </SlideShell>
+        ),
+      });
+    }
+
     if (data.cringeComments.length > 0) {
       const comment =
         data.cringeComments[cringeIndex % data.cringeComments.length];
@@ -547,56 +613,68 @@ export function WrappedDeck({
       });
     }
 
-    if (data.interestsByYear.length > 0 && interestYear !== null) {
+    if (data.interestsByYear.length > 0) {
+      const activeInterestYear =
+        interestYear ?? interestYears[interestYears.length - 1] ?? null;
       const topics =
-        data.interestsByYear.find((row) => row.year === interestYear)
-          ?.topics ?? [];
-      built.push({
-        id: "interests",
-        render: () => (
-          <SlideShell
-            title={<SlideTitle accent="slate">Your Interests</SlideTitle>}
-            subline="The algorithm thought you were interested in"
-          >
-            <div className="flex flex-wrap gap-2">
-              <AnimatePresence mode="popLayout">
-                {topics.map((topic) => (
-                  <motion.div
-                    key={`${interestYear}-${topic}`}
-                    layout
-                    initial={reduceMotion ? false : { opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={reduceMotion ? undefined : { opacity: 0, scale: 0.9 }}
-                  >
-                    <TagBox>{topic}</TagBox>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-            {interestYears.length > 1 ? (
-              <div className="mt-8 flex flex-wrap gap-2" role="tablist" aria-label="Interest year">
-                {interestYears.map((entry) => (
-                  <button
-                    key={entry}
-                    type="button"
-                    role="tab"
-                    aria-selected={entry === interestYear}
-                    onClick={() => setInterestYear(entry)}
-                    className={cn(
-                      "border border-ink/30 px-3 py-1.5 font-display text-xs font-bold tracking-[0.06em] transition-colors",
-                      entry === interestYear
-                        ? "border-teal bg-teal-wash text-teal"
-                        : "bg-cream text-ink/75 hover:border-ink hover:bg-receipt",
-                    )}
-                  >
-                    {entry}
-                  </button>
-                ))}
+        activeInterestYear === null
+          ? []
+          : (data.interestsByYear.find((row) => row.year === activeInterestYear)
+              ?.topics ?? []);
+      if (topics.length > 0 && activeInterestYear !== null) {
+        built.push({
+          id: "interests",
+          render: () => (
+            <SlideShell
+              title={<SlideTitle accent="slate">Your Interests</SlideTitle>}
+              subline="The algorithm thought you were interested in"
+            >
+              <div className="flex flex-wrap gap-2">
+                <AnimatePresence mode="popLayout">
+                  {topics.map((topic) => (
+                    <motion.div
+                      key={`${activeInterestYear}-${topic}`}
+                      layout
+                      initial={reduceMotion ? false : { opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={
+                        reduceMotion ? undefined : { opacity: 0, scale: 0.9 }
+                      }
+                    >
+                      <TagBox>{topic}</TagBox>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               </div>
-            ) : null}
-          </SlideShell>
-        ),
-      });
+              {interestYears.length > 1 ? (
+                <div
+                  className="mt-8 flex flex-wrap gap-2"
+                  role="tablist"
+                  aria-label="Interest year"
+                >
+                  {interestYears.map((entry) => (
+                    <button
+                      key={entry}
+                      type="button"
+                      role="tab"
+                      aria-selected={entry === activeInterestYear}
+                      onClick={() => setInterestYear(entry)}
+                      className={cn(
+                        "border border-ink/30 px-3 py-1.5 font-display text-xs font-bold tracking-[0.06em] transition-colors",
+                        entry === activeInterestYear
+                          ? "border-teal bg-teal-wash text-teal"
+                          : "bg-cream text-ink/75 hover:border-ink hover:bg-receipt",
+                      )}
+                    >
+                      {entry}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </SlideShell>
+          ),
+        });
+      }
     }
 
     if (data.oldestImages.length > 0) {
@@ -647,22 +725,22 @@ export function WrappedDeck({
       });
     }
 
-    if (data.threeAmEraMessages > 0) {
+    if (data.peakHour !== null && data.threeAmEraMessages > 0) {
       const peak = Math.max(...data.messagesByHour.map((row) => row.count), 1);
+      const peakLabel = formatHourClock(data.peakHour);
       built.push({
-        id: "3am",
+        id: "peak-hour",
         render: () => (
           <SlideShell
-            title={<SlideTitle accent="coral">The 3am Era</SlideTitle>}
+            title={
+              <SlideTitle accent="coral">
+                {peakEraTitle(data.peakHour!)}
+              </SlideTitle>
+            }
             subline={
               <>
-                {formatNumber(data.threeAmEraMessages)} messages between 2–4am
-                {data.peakHour !== null ? (
-                  <>
-                    {" "}
-                    — peak at <Mark>{String(data.peakHour).padStart(2, "0")}:00</Mark>
-                  </>
-                ) : null}
+                <Mark>{formatNumber(data.threeAmEraMessages)}</Mark> messages
+                around <Mark>{peakLabel}</Mark> — your busiest hour of the day.
               </>
             }
           >
@@ -677,16 +755,17 @@ export function WrappedDeck({
                   <XAxis
                     dataKey="hour"
                     tickFormatter={(hour: number) => `${hour}`}
-                    tick={{ fill: "var(--body)", fontSize: 11, fontFamily: "Lora" }}
+                    tick={{
+                      fill: "var(--body)",
+                      fontSize: 11,
+                      fontFamily: "Lora",
+                    }}
                     axisLine={{ stroke: "var(--ink)" }}
                     tickLine={false}
                     interval={2}
                   />
                   <YAxis hide domain={[0, peak]} />
-                  <Bar
-                    dataKey="count"
-                    isAnimationActive={!reduceMotion}
-                  >
+                  <Bar dataKey="count" isAnimationActive={!reduceMotion}>
                     {data.messagesByHour.map((entry) => (
                       <Cell
                         key={entry.hour}

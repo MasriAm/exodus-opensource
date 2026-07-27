@@ -109,17 +109,17 @@ function YearSparkline({
         Bar height = volume that year. The number under each bar is the year
         (last two digits). Hover a bar for the exact count.
       </p>
-      <div className="flex h-20 items-end gap-1.5">
+      <div className="flex h-24 items-end gap-1.5 overflow-visible pt-6">
         {rows.map((row) => (
           <div
             key={row.year}
-            className="group relative flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
+            className="group relative flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1 overflow-visible"
           >
-            <span className="pointer-events-none absolute -top-1 hidden rounded bg-ink px-1.5 py-0.5 font-display text-[10px] font-bold text-cream group-hover:block">
+            <span className="pointer-events-none absolute bottom-[calc(100%-0.25rem)] z-20 hidden -translate-y-1 whitespace-nowrap rounded bg-ink px-1.5 py-0.5 font-display text-[10px] font-bold text-cream shadow-panel group-hover:block">
               {formatNumber(row.messageCount)} msgs
             </span>
             <div
-              className="w-full max-w-[2rem] bg-[color-mix(in_srgb,var(--teal)_55%,var(--paper))] transition-opacity group-hover:opacity-90"
+              className="relative z-0 w-full max-w-[2rem] bg-[color-mix(in_srgb,var(--teal)_55%,var(--paper))] transition-opacity group-hover:opacity-90"
               style={{
                 height: `${Math.max(10, Math.round((row.messageCount / max) * 100))}%`,
               }}

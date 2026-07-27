@@ -335,11 +335,23 @@ describe("DuckDB named-query SQL", () => {
     );
     expect(queryRows(wrapped.topContacts)).toHaveLength(2);
 
-    const hours = queryRows(wrapped.hours);
+    const hours = preparedRows(wrapped.hours, [localUtcOffsetSeconds()]);
     expect(hours).toHaveLength(24);
-    const threeAm = hours.find((row) => readNumber(row, "hour") === 3);
-    expect(threeAm).toBeDefined();
-    expect(readNumber(threeAm as SqlRow, "message_count")).toBe(2);
+    const totalHourMessages = hours.reduce(
+      (sum, row) => sum + readNumber(row, "message_count"),
+      0,
+    );
+    expect(totalHourMessages).toBe(7);
+    const expectedByHour = new Map<number, number>();
+    for (const ms of messageTimestamps) {
+      const hour = new Date(ms).getHours();
+      expectedByHour.set(hour, (expectedByHour.get(hour) ?? 0) + 1);
+    }
+    for (const [hour, count] of expectedByHour) {
+      const row = hours.find((entry) => readNumber(entry, "hour") === hour);
+      expect(row).toBeDefined();
+      expect(readNumber(row as SqlRow, "message_count")).toBe(count);
+    }
 
     const busiest = oneRow(queryRows(wrapped.busiestDay));
     expect(readString(busiest, "active_date")).toBe("2024-01-01");

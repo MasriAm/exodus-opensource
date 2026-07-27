@@ -455,6 +455,22 @@ async function parseMessages(
   }
 }
 
+function connectionUsername(
+  datum: { href?: string; value?: string },
+  title: string | undefined,
+): string | null {
+  const fromHref = datum.href
+    ? datum.href.match(/instagram\.com\/(?:_u\/)?([^/?#]+)/i)?.[1]
+    : undefined;
+  for (const candidate of [datum.value, title, fromHref]) {
+    const trimmed = candidate?.trim();
+    if (trimmed) {
+      return fixMojibake(trimmed.replace(/^@+/, ""));
+    }
+  }
+  return null;
+}
+
 async function parseConnections(
   entries: Parameters<DataParser["parse"]>[0],
   connectionEntries: readonly ConnectionEntryInfo[],
@@ -467,6 +483,10 @@ async function parseConnections(
 
     for (const connection of connections) {
       for (const datum of connection.string_list_data) {
+        const username = connectionUsername(datum, connection.title);
+        if (!username) {
+          continue;
+        }
         await batch.add(
           {
             table: "events",
@@ -479,8 +499,8 @@ async function parseConnections(
             payload: stringifyJson(
               {
                 href: datum.href ?? null,
-                name: connection.title ?? datum.value ?? null,
-                value: datum.value ?? null,
+                name: connection.title ?? username,
+                value: username,
               },
               entry.path,
             ),

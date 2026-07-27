@@ -46,6 +46,7 @@ export function WrappedClient({ api }: WrappedClientProps) {
           })),
           peakHour: result.peakHour,
           threeAmEraMessages: result.threeAmEraMessages,
+          busiestDay: result.busiestDay,
           topWords: result.topWords,
           firstMessage: result.firstMessage
             ? {

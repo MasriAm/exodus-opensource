@@ -483,6 +483,7 @@ export interface WrappedStatsResult {
   topContacts: WrappedContact[];
   messagesByHour: WrappedHour[];
   peakHour: number | null;
+  /** Messages in the single busiest local hour (legacy name kept for the API). */
   threeAmEraMessages: number;
   busiestDay: WrappedBusiestDay | null;
   topWords: WrappedWord[];
