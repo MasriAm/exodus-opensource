@@ -54,6 +54,8 @@ type SearchViewProps = {
   error: string | null;
   hasSearched: boolean;
   initialTerm?: string;
+  /** Person filter that search deliberately does not apply. */
+  ignoredConversation?: string | null;
   onSearch: (term: string) => void;
   onOpenConversation?: (conversation: string) => void;
 };
@@ -64,6 +66,7 @@ export function SearchView({
   error,
   hasSearched,
   initialTerm = "",
+  ignoredConversation = null,
   onSearch,
   onOpenConversation,
 }: SearchViewProps) {
@@ -129,6 +132,20 @@ export function SearchView({
       <p className="font-display text-[11px] uppercase tracking-[0.06em] text-body">
         Tokens: from: · in: · before: · after: · has:media
       </p>
+
+      {ignoredConversation ? (
+        <p className="font-body text-[13px] text-body">
+          Search covers every thread — the{" "}
+          <UserText className="font-semibold text-ink">
+            {ignoredConversation}
+          </UserText>{" "}
+          filter is ignored here. Use{" "}
+          <code className="font-display text-[12px] text-ink">
+            in:&quot;{ignoredConversation}&quot;
+          </code>{" "}
+          to scope it back.
+        </p>
+      ) : null}
 
       {error ? (
         <StatePanel

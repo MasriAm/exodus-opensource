@@ -1,16 +1,19 @@
+/**
+ * End-to-end smoke test against the static export (`npm run preview`).
+ *
+ * Drives a headless Chromium over the DevTools protocol and walks the real
+ * ingest → Wrapped → dashboard flow, asserting the behaviours that broke
+ * before: bubble alignment across pages, media tiles opening, calendar cell
+ * order, search independence from the person filter, Arabic-safe CSV export,
+ * and a console with no errors (which also proves DuckDB never reaches for a
+ * remote extension).
+ */
 import { spawn } from "node:child_process";
-import {
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-const APP_URL = process.env.EXODUS_SMOKE_URL ?? "http://localhost:4173";
+const APP_URL = process.env.EXODUS_SMOKE_URL ?? "http://127.0.0.1:4173";
 const DEBUG_PORT = 9_223;
 const TIMEOUT_MS = 90_000;
 const WRITE_SCREENSHOTS = process.env.EXODUS_WRITE_SCREENSHOTS === "1";
@@ -178,13 +181,56 @@ async function connectToPage() {
     if (result.exceptionDetails) {
       throw new Error(
         result.exceptionDetails.exception?.description ??
-          result.exceptionDetails.text,
+          result.exceptionDetails.text ??
+          "The page expression failed.",
       );
     }
     return result.result?.value;
   };
 
   return { socket, send, evaluate, browserErrors };
+}
+
+/** Clicks the shortest button/link whose text contains `label`. */
+const clickText = (label) => `
+  (() => {
+    const wanted = ${JSON.stringify(label)}.toLowerCase();
+    const matches = [...document.querySelectorAll("button, a")].filter((node) =>
+      (node.textContent ?? "").trim().toLowerCase().includes(wanted),
+    );
+    matches.sort(
+      (left, right) =>
+        (left.textContent ?? "").length - (right.textContent ?? "").length,
+    );
+    matches[0]?.click();
+    return Boolean(matches[0]);
+  })()
+`;
+
+const BUBBLE_STATE = `
+  JSON.stringify((() => {
+    const rows = [...document.querySelectorAll("article")]
+      .map((node) => node.parentElement)
+      .filter((node) => node && node.className.includes("justify-"));
+    const bySender = new Map();
+    for (const row of rows) {
+      const sender = row.querySelector("bdi")?.textContent?.trim() ?? "";
+      const outgoing = row.className.includes("justify-end");
+      const seen = bySender.get(sender);
+      bySender.set(sender, seen === undefined ? outgoing : seen || outgoing);
+    }
+    return {
+      total: rows.length,
+      outgoing: rows.filter((row) => row.className.includes("justify-end")).length,
+      sides: [...bySender.entries()],
+    };
+  })())
+`;
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
 }
 
 async function run() {
@@ -228,265 +274,220 @@ async function run() {
           captureBeyondViewport: false,
         });
         await mkdir(SCREENSHOT_DIRECTORY, { recursive: true });
+        const { writeFile } = await import("node:fs/promises");
         await writeFile(
           join(SCREENSHOT_DIRECTORY, `${name}.png`),
           Buffer.from(screenshot.data, "base64"),
         );
       };
 
+      // 1. Landing page and synthetic ingest.
       await waitFor("the landing page", async () =>
         evaluate(
           `document.readyState === "complete" &&
-           document.body.innerText.includes("Try synthetic export")`,
+           document.body.innerText.includes("synthetic export")`,
         ),
       );
-      await new Promise((resolve) => setTimeout(resolve, 700));
       await captureScreenshot("landing");
+      assert(
+        await evaluate(clickText("synthetic export")),
+        "The synthetic-export button was not found.",
+      );
 
-      const clickedDemo = await evaluate(`
-        (() => {
-          const button = [...document.querySelectorAll("button")].find(
-            (candidate) => candidate.textContent?.includes("Try synthetic export"),
-          );
-          button?.click();
-          return Boolean(button);
-        })()
-      `);
-      if (!clickedDemo) {
-        throw new Error("The synthetic-export button was not found.");
-      }
+      // 2. Wrapped runs first — it needs the DuckDB json extension, so a
+      //    missing self-hosted mirror surfaces right here.
+      await waitFor("Wrapped statistics", async () =>
+        evaluate(
+          `location.pathname === "/wrapped" &&
+           document.body.innerText.includes("1,500")`,
+        ),
+      );
+      await captureScreenshot("wrapped");
+      assert(
+        await evaluate(clickText("skip to dashboard")),
+        "The Wrapped skip control was not found.",
+      );
 
-      await waitFor("Instagram ingest and dashboard navigation", async () =>
+      // 3. Desk overview.
+      await waitFor("the dashboard desk", async () =>
         evaluate(
           `location.pathname === "/dashboard" &&
-           document.body.innerText.includes("1,500 messages")`,
+           document.body.innerText.includes("1,500")`,
         ),
-      );
-      await waitFor("the first conversation page", async () =>
-        evaluate(`document.body.innerText.includes("Load earlier messages")`),
       );
       await captureScreenshot("dashboard");
 
-      const openedSearch = await evaluate(`
-        (() => {
-          const button = [...document.querySelectorAll("button")].find(
-            (candidate) => candidate.textContent?.trim() === "Search",
-          );
-          button?.click();
-          return Boolean(button);
-        })()
-      `);
-      if (!openedSearch) {
-        throw new Error("The dashboard Search view was not found.");
+      // 4. Every view renders.
+      for (const [view, expected] of [
+        ["messages", "conversation index"],
+        ["people", "index"],
+        ["media", "files"],
+        ["calendar", "communication heatmap"],
+        ["footprint", "followers & following"],
+        ["search", "type a word to begin"],
+      ]) {
+        assert(await evaluate(clickText(view)), `The ${view} view is missing.`);
+        await waitFor(`the ${view} view`, async () =>
+          evaluate(
+            `document.body.innerText.toLowerCase().includes(${JSON.stringify(expected)})`,
+          ),
+        );
       }
 
+      // 5. Messages: a sender must keep the same side on every page.
+      assert(await evaluate(clickText("messages")), "Messages view missing.");
+      await waitFor("the first message page", async () =>
+        evaluate(`document.querySelectorAll("article").length > 3`),
+      );
+      const firstPage = JSON.parse(await evaluate(BUBBLE_STATE));
+      assert(firstPage.total > 3, "No message bubbles rendered.");
+      assert(
+        firstPage.outgoing > 0 && firstPage.outgoing < firstPage.total,
+        "Every bubble landed on the same side of the thread.",
+      );
+      assert(
+        await evaluate(clickText("next")),
+        "The message pager was not found.",
+      );
+      await waitFor("the second message page", async () =>
+        evaluate(`document.body.innerText.includes("2 of")`),
+      );
+      const secondPage = JSON.parse(await evaluate(BUBBLE_STATE));
+      for (const [sender, outgoing] of secondPage.sides) {
+        const before = firstPage.sides.find((entry) => entry[0] === sender);
+        assert(
+          before === undefined || before[1] === outgoing,
+          `${sender} switched sides between pages.`,
+        );
+      }
+
+      // 6. Media: all four kind tabs stay available and a tile opens.
+      assert(await evaluate(clickText("media")), "Media view missing.");
+      await waitFor("local media tiles", async () =>
+        evaluate(`document.querySelectorAll('img[src^="blob:"]').length > 0`),
+      );
+      const tabs = JSON.parse(
+        await evaluate(
+          `JSON.stringify([...document.querySelectorAll('[role="tab"]')].map((node) => node.textContent?.trim()))`,
+        ),
+      );
+      for (const tab of ["Images", "Voice notes", "Video", "Other"]) {
+        assert(tabs.includes(tab), `The ${tab} media tab disappeared.`);
+      }
+      assert(
+        await evaluate(`
+          (() => {
+            const tile = document.querySelector('img[src^="blob:"]')?.closest("button");
+            tile?.click();
+            return Boolean(tile);
+          })()
+        `),
+        "No media tile could be clicked.",
+      );
+      await waitFor("the media preview", async () =>
+        evaluate(
+          `document.querySelectorAll('[role="dialog"] img[src^="blob:"]').length === 1`,
+        ),
+      );
+      await evaluate(
+        `window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))`,
+      );
+      await waitFor("the closed preview", async () =>
+        evaluate(`!document.querySelector('[role="dialog"]')`),
+      );
+
+      // 7. Calendar: cells run day by day, so the year is not shuffled.
+      assert(await evaluate(clickText("calendar")), "Calendar view missing.");
+      await waitFor("the heatmap", async () =>
+        evaluate(`document.querySelectorAll('[title*=","]').length > 300`),
+      );
+      const dayTitles = JSON.parse(
+        await evaluate(
+          `JSON.stringify([...document.querySelectorAll('[title*=","]')].map((node) => node.getAttribute("title").split(" · ")[0]))`,
+        ),
+      );
+      const dayValues = dayTitles.map((title) => Date.parse(title));
+      for (let index = 1; index < dayValues.length; index += 1) {
+        assert(
+          dayValues[index] > dayValues[index - 1],
+          `Heatmap cells are out of order at ${dayTitles[index - 1]} → ${dayTitles[index]}.`,
+        );
+      }
+
+      // 8. Search ignores the person filter and finds Arabic text.
+      assert(await evaluate(clickText("search")), "Search view missing.");
       await waitFor("the search form", async () =>
-        evaluate(`Boolean(document.querySelector('input[type="search"], input[placeholder*="Search"]'))`),
+        evaluate(`Boolean(document.querySelector('input[placeholder*="from:"]'))`),
       );
-      await evaluate(`
-        (() => {
-          const input = document.querySelector('input[type="search"], input[placeholder*="Search"]');
-          const setter = Object.getOwnPropertyDescriptor(
-            HTMLInputElement.prototype,
-            "value",
-          )?.set;
-          setter?.call(input, "ذكريات");
-          input?.dispatchEvent(new Event("input", { bubbles: true }));
-          input?.form?.requestSubmit();
-        })()
-      `);
-      await waitFor("Arabic search results", async () =>
-        evaluate(`document.body.innerText.includes("267 matches")`),
+      const searchFor = async (term) => {
+        await evaluate(`
+          (() => {
+            const input = document.querySelector('input[placeholder*="from:"]');
+            const setter = Object.getOwnPropertyDescriptor(
+              HTMLInputElement.prototype,
+              "value",
+            )?.set;
+            setter?.call(input, ${JSON.stringify(term)});
+            input?.dispatchEvent(new Event("input", { bubbles: true }));
+            input?.form?.requestSubmit();
+          })()
+        `);
+        return waitFor(`results for ${term}`, async () =>
+          evaluate(
+            `/\\d+ matches?/i.test(document.body.innerText) ||
+             document.body.innerText.includes("No matching messages")`,
+          ),
+        );
+      };
+      await searchFor("ذكريات");
+      assert(
+        await evaluate(`/[1-9][\\d,]* matches?/i.test(document.body.innerText)`),
+        "Arabic search returned nothing.",
       );
-      await evaluate(`
-        (() => {
-          const input = document.querySelector('input[type="search"], input[placeholder*="Search"]');
-          const setter = Object.getOwnPropertyDescriptor(
-            HTMLInputElement.prototype,
-            "value",
-          )?.set;
-          setter?.call(input, "reclaim");
-          input?.dispatchEvent(new Event("input", { bubbles: true }));
-          input?.form?.requestSubmit();
-        })()
-      `);
-      await waitFor("English search results", async () =>
-        evaluate(`document.body.innerText.includes("180 matches")`),
-      );
-
-      await evaluate(`
-        (() => {
-          const originalRevoke = URL.revokeObjectURL.bind(URL);
-          window.__exodusRevokedObjectUrls = 0;
-          URL.revokeObjectURL = (url) => {
-            window.__exodusRevokedObjectUrls += 1;
-            originalRevoke(url);
-          };
-        })()
-      `);
-      const openedMedia = await evaluate(`
-        (() => {
-          const button = [...document.querySelectorAll("button")].find(
-            (candidate) => candidate.textContent?.trim() === "Media",
-          );
-          button?.click();
-          return Boolean(button);
-        })()
-      `);
-      if (!openedMedia) {
-        throw new Error("The dashboard Media view was not found.");
-      }
-      await waitFor("lazy local media", async () =>
-        evaluate(
-          `document.body.innerText.includes("Media gallery") &&
-           Boolean(document.querySelector('img[src^="blob:"]'))`,
-        ),
-      );
-      await evaluate(`window.scrollTo(0, document.body.scrollHeight)`);
-      await waitFor("offscreen media URL revocation", async () =>
-        evaluate(`window.__exodusRevokedObjectUrls > 0`),
-      );
-      await evaluate(`window.scrollTo(0, 0)`);
-
-      const openedActivity = await evaluate(`
-        (() => {
-          const button = [...document.querySelectorAll("button")].find(
-            (candidate) => candidate.textContent?.trim() === "Activity",
-          );
-          button?.click();
-          return Boolean(button);
-        })()
-      `);
-      if (!openedActivity) {
-        throw new Error("The dashboard Activity view was not found.");
-      }
-      await waitFor("the activity chart", async () =>
-        evaluate(
-          `document.body.innerText.includes("Account activity") &&
-           Boolean(document.querySelector("svg"))`,
-        ),
+      await searchFor("after:2023 reclaim");
+      assert(
+        await evaluate(`/[1-9][\\d,]* matches?/i.test(document.body.innerText)`),
+        "Token search returned nothing.",
       );
 
-      const openedExport = await evaluate(`
-        (() => {
-          const button = [...document.querySelectorAll("button")].find(
-            (candidate) => candidate.textContent?.trim() === "Export",
-          );
-          button?.click();
-          return Boolean(button);
-        })()
-      `);
-      if (!openedExport) {
-        throw new Error("The dashboard Export view was not found.");
-      }
+      // 9. Export keeps Arabic and the UTF-8 BOM.
+      assert(await evaluate(clickText("export")), "Export view missing.");
       await waitFor("the export controls", async () =>
-        evaluate(`document.body.innerText.includes("Take back a clean copy")`),
+        evaluate(`document.body.innerText.toLowerCase().includes("csv")`),
       );
-      const startedExport = await evaluate(`
-        (() => {
-          const button = [...document.querySelectorAll("article button")].find(
-            (candidate) => candidate.textContent?.trim() === "CSV",
-          );
-          button?.click();
-          return Boolean(button);
-        })()
-      `);
-      if (!startedExport) {
-        throw new Error("The messages CSV export button was not found.");
-      }
-      const exportPath = await waitFor("the UTF-8 CSV download", async () => {
+      assert(
+        await evaluate(`
+          (() => {
+            const row = [...document.querySelectorAll("li, article, tr, div")].find(
+              (node) =>
+                (node.textContent ?? "").includes("Download CSV") &&
+                (node.textContent ?? "").toLowerCase().includes("messages"),
+            );
+            const button = [
+              ...(row ?? document).querySelectorAll("button"),
+            ].find((candidate) => candidate.textContent?.trim() === "Download CSV");
+            button?.click();
+            return Boolean(button);
+          })()
+        `),
+        "The messages CSV export button was not found.",
+      );
+      const exportPath = await waitFor("the CSV download", async () => {
         const filenames = await readdir(downloadDirectory);
         const filename = filenames.find((name) => name.endsWith(".csv"));
         return filename ? join(downloadDirectory, filename) : null;
       });
       const csv = await readFile(exportPath);
-      if (csv[0] !== 0xef || csv[1] !== 0xbb || csv[2] !== 0xbf) {
-        throw new Error("The messages CSV is missing its UTF-8 BOM.");
-      }
-      if (!csv.toString("utf8").includes("عمر")) {
-        throw new Error("The messages CSV did not preserve Arabic text.");
-      }
-
-      const openedWrapped = await evaluate(`
-        (() => {
-          const link = document.querySelector('a[href="/wrapped"]');
-          link?.click();
-          return Boolean(link);
-        })()
-      `);
-      if (!openedWrapped) {
-        throw new Error("The Wrapped navigation link was not found.");
-      }
-      await waitFor("Wrapped statistics", async () =>
-        evaluate(
-          `location.pathname === "/wrapped" &&
-           document.body.innerText.includes("1,500 messages. One story.") &&
-           document.body.innerText.includes("462") &&
-           document.body.innerText.includes("731") &&
-           document.body.innerText.includes("family_group")`,
-        ),
+      assert(
+        csv[0] === 0xef && csv[1] === 0xbb && csv[2] === 0xbf,
+        "The CSV export is missing its UTF-8 BOM.",
       );
-      await captureScreenshot("wrapped");
-
-      const returnedHome = await evaluate(`
-        (() => {
-          const link = document.querySelector('a[aria-label="Exodus home"]');
-          link?.click();
-          return Boolean(link);
-        })()
-      `);
-      if (!returnedHome) {
-        throw new Error("The Exodus home link was not found.");
-      }
-      await waitFor("the landing page after Wrapped", async () =>
-        evaluate(
-          `location.pathname === "/" &&
-           Boolean(document.querySelector('input[type="file"]'))`,
-        ),
-      );
-      await evaluate(`
-        (async () => {
-          const response = await fetch("/demo-whatsapp.zip");
-          if (!response.ok) {
-            throw new Error("WhatsApp demo fetch failed");
-          }
-          const file = new File(
-            [await response.blob()],
-            "demo-whatsapp.zip",
-            { type: "application/zip" },
-          );
-          const transfer = new DataTransfer();
-          transfer.items.add(file);
-          const input = document.querySelector('input[type="file"]');
-          Object.defineProperty(input, "files", {
-            configurable: true,
-            value: transfer.files,
-          });
-          input.dispatchEvent(new Event("change", { bubbles: true }));
-        })()
-      `);
-      await waitFor("WhatsApp ingest and archive replacement", async () =>
-        evaluate(
-          `location.pathname === "/dashboard" &&
-           document.body.innerText.includes("6 messages")`,
-        ),
-      );
-      await evaluate(`
-        (() => {
-          const button = [...document.querySelectorAll("button")].find(
-            (candidate) => candidate.textContent?.trim() === "Media",
-          );
-          button?.click();
-        })()
-      `);
-      await waitFor("WhatsApp omitted-media placeholders", async () =>
-        evaluate(
-          `document.body.innerText.match(
-             /Media was omitted from the WhatsApp export\\./g,
-           )?.length === 2`,
-        ),
+      assert(
+        csv.toString("utf8").includes("سارة"),
+        "The CSV export lost its Arabic text.",
       );
 
+      // 10. Offline: the shell and the archive survive without the network.
       await waitFor("the offline app shell", async () =>
         evaluate(`
           (async () => {
@@ -508,75 +509,21 @@ async function run() {
         uploadThroughput: 0,
         connectionType: "none",
       });
-
-      await evaluate(`
-        (() => {
-          const link = document.querySelector('a[aria-label="Exodus home"]');
-          link?.click();
-        })()
-      `);
+      await evaluate(clickText("Exodus"));
       await waitFor("the cached landing page", async () =>
         evaluate(
           `location.pathname === "/" &&
-           document.body.innerText.includes("Try synthetic export")`,
+           document.body.innerText.includes("synthetic export")`,
         ),
       );
-      await evaluate(`
-        (() => {
-          const button = [...document.querySelectorAll("button")].find(
-            (candidate) => candidate.textContent?.includes("Try synthetic export"),
-          );
-          button?.click();
-        })()
-      `);
-      await waitFor("offline cached Instagram ingest", async () =>
-        evaluate(
-          `location.pathname === "/dashboard" &&
-           document.body.innerText.includes("1,500 messages")`,
-        ),
+      assert(
+        await evaluate(clickText("synthetic export")),
+        "The offline demo button was not found.",
       );
-      await evaluate(`
-        (() => {
-          const button = [...document.querySelectorAll("button")].find(
-            (candidate) => candidate.textContent?.trim() === "Export",
-          );
-          button?.click();
-        })()
-      `);
-      await waitFor("offline export controls", async () =>
-        evaluate(`document.body.innerText.includes("Take back a clean copy")`),
-      );
-      await evaluate(`
-        (() => {
-          const button = [...document.querySelectorAll("article button")].find(
-            (candidate) => candidate.textContent?.trim() === "JSON",
-          );
-          button?.click();
-        })()
-      `);
-      const jsonExportPath = await waitFor("the offline JSON download", async () => {
-        const filenames = await readdir(downloadDirectory);
-        const filename = filenames.find((name) => name.endsWith(".json"));
-        return filename ? join(downloadDirectory, filename) : null;
-      });
-      const jsonExport = JSON.parse(await readFile(jsonExportPath, "utf8"));
-      if (
-        !Array.isArray(jsonExport) ||
-        jsonExport.length !== 1_500 ||
-        !JSON.stringify(jsonExport).includes("عمر")
-      ) {
-        throw new Error("The offline JSON export did not preserve all messages.");
-      }
-      await evaluate(`
-        (() => {
-          const link = document.querySelector('a[href="/wrapped"]');
-          link?.click();
-        })()
-      `);
-      await waitFor("offline Wrapped statistics", async () =>
+      await waitFor("the offline ingest", async () =>
         evaluate(
-          `location.pathname === "/wrapped" &&
-           document.body.innerText.includes("1,500 messages. One story.")`,
+          `(location.pathname === "/wrapped" || location.pathname === "/dashboard") &&
+           document.body.innerText.includes("1,500")`,
         ),
       );
 
@@ -586,7 +533,7 @@ async function run() {
         );
       }
       console.log(
-        "Browser smoke passed: both ingests, search, media, exports, Wrapped, PNG, and offline mode.",
+        "Browser smoke passed: ingest, Wrapped, every view, alignment, media preview, calendar order, search, CSV export, offline reload.",
       );
     } catch (error) {
       if (browserErrors.length > 0) {

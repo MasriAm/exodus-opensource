@@ -438,21 +438,6 @@ async function parseTranscriptLines(
   }
 }
 
-/** @deprecated Prefer parseTranscriptLines — kept for unit tests that pass strings. */
-async function parseTranscript(
-  text: string,
-  transcriptPath: string,
-  batch: ValidatedBatchEmitter,
-): Promise<void> {
-  const lines = text.replace(/^\uFEFF/, "").split(/\r\n|\n|\r/);
-  async function* asAsync() {
-    for (const line of lines) {
-      yield line;
-    }
-  }
-  await parseTranscriptLines(asAsync(), transcriptPath, batch);
-}
-
 export const whatsappParser: DataParser = {
   id: "whatsapp",
   displayName: "WhatsApp",

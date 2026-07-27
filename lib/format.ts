@@ -10,6 +10,11 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "short",
 });
+/** Calendar-day keys are UTC-encoded local dates — format them in UTC. */
+const dayKeyFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeZone: "UTC",
+});
 
 export function formatNumber(value: number): string {
   return numberFormatter.format(value);
@@ -27,6 +32,14 @@ export function formatDate(value: number | string | Date): string {
 
 export function formatDateTime(value: number | string | Date): string {
   return dateTimeFormatter.format(new Date(value));
+}
+
+/**
+ * Format a heatmap/calendar day key (UTC midnight standing for a local date)
+ * without shifting it into the viewer's timezone.
+ */
+export function formatDayKey(value: number): string {
+  return dayKeyFormatter.format(new Date(value));
 }
 
 export function downloadBlob(blob: Blob, filename: string): void {

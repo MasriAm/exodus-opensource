@@ -6,7 +6,7 @@ import { TagBox } from "@/components/capsule/tag-box";
 import { ArchivePanel } from "@/components/dashboard/archive-panel";
 import { StatePanel } from "@/components/state-panel";
 import { UserText } from "@/components/user-text";
-import { formatDate, formatNumber, pluralize } from "@/lib/format";
+import { formatDate, formatNumber } from "@/lib/format";
 import { followingWithoutFollowBack, uniqueFollowEvents } from "@/lib/follow-facts";
 import type { FootprintResult } from "@/lib/db/types";
 import { cn } from "@/lib/utils";

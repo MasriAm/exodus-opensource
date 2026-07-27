@@ -7,7 +7,7 @@ import { PhotoThumb } from "@/components/capsule/photo-thumb";
 import { PressButton } from "@/components/capsule/press-button";
 import { ArchivePanel, StatCard } from "@/components/dashboard/archive-panel";
 import { UserText } from "@/components/user-text";
-import { formatDate, formatNumber } from "@/lib/format";
+import { formatDate, formatNumber, pluralize } from "@/lib/format";
 import type { DeskHomeResult, MessageItem } from "@/lib/db/types";
 
 type DeskHomeProps = {
@@ -113,8 +113,8 @@ export function DeskHome({
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         {featured ? (
           <ArchivePanel
-            title={`On this day (${new Date().getUTCFullYear()})`}
-            subtitle={`${monthName} ${data.onThisDayDay} · ${formatNumber(data.onThisDayMessageCount)} messages across the years`}
+            title={`On this day (${new Date().getFullYear()})`}
+            subtitle={`${monthName} ${data.onThisDayDay} · ${pluralize(data.onThisDayMessageCount, "message")} across the years`}
             action={<GhostLink onClick={onOpenActivity}>See all →</GhostLink>}
           >
             <blockquote

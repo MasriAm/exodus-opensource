@@ -247,6 +247,8 @@ export function MediaView({
     url: string;
     item: MediaItem;
   } | null>(null);
+  const lightboxUrlRef = useRef<string | null>(null);
+  lightboxUrlRef.current = lightbox?.url ?? null;
 
   const closeLightbox = () => {
     setLightbox((current) => {
@@ -257,9 +259,38 @@ export function MediaView({
     });
   };
 
-  const openLightbox = async (sourceUrl: string, item: MediaItem) => {
+  useEffect(() => {
+    if (!lightbox) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeLightbox();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lightbox]);
+
+  // Release the preview copy if the view unmounts while it is open.
+  useEffect(
+    () => () => {
+      if (lightboxUrlRef.current) {
+        URL.revokeObjectURL(lightboxUrlRef.current);
+        lightboxUrlRef.current = null;
+      }
+    },
+    [],
+  );
+
+  /**
+   * The preview owns its own object URL: tiles revoke theirs when they scroll
+   * out or the page changes. Re-reading from the worker also keeps CSP happy —
+   * `connect-src 'self'` forbids fetching a blob: URL.
+   */
+  const openLightbox = async (fallbackUrl: string, item: MediaItem) => {
     try {
-      const blob = await (await fetch(sourceUrl)).blob();
+      const blob = await readBlob(item.zipPath);
       const owned = URL.createObjectURL(blob);
       setLightbox((current) => {
         if (current) {
@@ -267,8 +298,9 @@ export function MediaView({
         }
         return { url: owned, item };
       });
-    } catch {
-      setLightbox({ url: sourceUrl, item });
+    } catch (error: unknown) {
+      console.error(`Could not open ${item.zipPath}.`, error);
+      setLightbox({ url: fallbackUrl, item });
     }
   };
 

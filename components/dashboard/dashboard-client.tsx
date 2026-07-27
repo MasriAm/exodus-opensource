@@ -287,6 +287,26 @@ export function DashboardClient({ api }: DashboardClientProps) {
     [options],
   );
 
+  // The calendar forces a year so its totals match the grid. That must not
+  // silently follow the reader into Media, Search, or Footprint.
+  const yearBeforeCalendarRef = useRef<number | null>(null);
+  const leftCalendarRef = useRef(false);
+  useEffect(() => {
+    if (activeView === "activity") {
+      if (!leftCalendarRef.current) {
+        yearBeforeCalendarRef.current = year;
+        leftCalendarRef.current = true;
+      }
+      return;
+    }
+    if (leftCalendarRef.current) {
+      leftCalendarRef.current = false;
+      setYear(yearBeforeCalendarRef.current);
+    }
+    // `year` is intentionally read as a snapshot when the calendar opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView]);
+
   const showFootprint = Boolean(
     footprint &&
       (footprint.comments.length > 0 ||
@@ -657,7 +677,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
       setYear(years[years.length - 1] ?? null);
       return;
     }
-    const targetYear = year ?? new Date().getUTCFullYear();
+    const targetYear = year ?? new Date().getFullYear();
     let active = true;
     setHeatmapLoading(true);
     setHeatmapError(null);
@@ -838,14 +858,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
           noun: "message",
         };
     }
-  }, [
-    activeView,
-    conversations,
-    heatmap,
-    mediaTotalCount,
-    messageCount,
-    people.length,
-  ]);
+  }, [activeView, heatmap, mediaTotalCount, messageCount, people.length]);
 
   const activeContent = (() => {
     switch (activeView) {
@@ -972,6 +985,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
             error={searchError}
             hasSearched={hasSearched}
             initialTerm={searchSeed}
+            ignoredConversation={filter.conversation ?? null}
             onSearch={search}
             onOpenConversation={openMessages}
           />

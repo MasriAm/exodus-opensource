@@ -45,9 +45,10 @@ type MessagesViewProps = {
   onChangePage: (page: number) => void;
 };
 
+/** Day separators follow the reader's local calendar, like the timestamps do. */
 function dayKey(value: number | string | Date): string {
   const date = new Date(value);
-  return `${date.getUTCFullYear()}-${date.getUTCMonth()}-${date.getUTCDate()}`;
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
 function dayLabel(value: number | string | Date): string {
@@ -56,7 +57,6 @@ function dayLabel(value: number | string | Date): string {
     year: "numeric",
     month: "short",
     day: "numeric",
-    timeZone: "UTC",
   }).format(new Date(value));
 }
 
@@ -230,7 +230,7 @@ export function MessagesView({
                           <UserText
                             className={cn(
                               "block font-body text-[11px] font-semibold",
-                              outgoing ? "text-teal" : "text-teal",
+                              outgoing ? "text-cream/85" : "text-teal",
                             )}
                           >
                             {message.sender}

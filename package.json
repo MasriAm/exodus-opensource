@@ -11,7 +11,7 @@
     "test:browser": "node scripts/browser-smoke.mjs",
     "lint": "eslint .",
     "fixtures": "tsx scripts/generate-fixture.ts && npm run assets:fixtures",
-    "assets:duckdb": "node scripts/copy-duckdb-assets.mjs",
+    "assets:duckdb": "node scripts/copy-duckdb-assets.mjs && node scripts/copy-duckdb-extensions.mjs",
     "assets:fixtures": "node scripts/copy-demo-fixtures.mjs",
     "assets:loading": "node scripts/convert-loading-assets.mjs",
     "postinstall": "npm run assets:duckdb && npm run assets:fixtures"

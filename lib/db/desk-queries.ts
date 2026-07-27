@@ -263,10 +263,14 @@ export async function deskHome(
       END AS active_to_ms
   `;
 
+  // Parameters must follow the order the clauses appear in overviewSql:
+  // messages, media, conversations, MIN×2, MAX×2.
   const overview = onlyRow(
     await preparedRows(connection, overviewSql, [
       ...msg.params,
       ...med.params,
+      ...msg.params,
+      ...msg.params,
       ...msg.params,
       ...msg.params,
       ...msg.params,
@@ -962,26 +966,35 @@ export async function messageHeatmap(
   rawParams: MessageHeatmapParams,
 ): Promise<MessageHeatmapResult> {
   const params = requiredRecord(rawParams, "messageHeatmap parameters");
-  const year = boundedInteger(optionalNumber(params, "year"), new Date().getUTCFullYear(), 1970, 2100);
+  const year = boundedInteger(
+    optionalNumber(params, "year"),
+    new Date().getFullYear(),
+    1970,
+    2100,
+  );
   const filter = optionalFilter(params);
+  // Group by the browser's local calendar day so late-night messages don't
+  // slide onto the previous/next cell.
+  const localOffsetSec = localUtcOffsetSeconds();
+  const localSentAt = localWallTimestampSql("sent_at");
   const msg = messagesWhere({
     ...filter,
-    fromMs: filter.fromMs ?? Date.UTC(year, 0, 1),
-    toMs: filter.toMs ?? Date.UTC(year + 1, 0, 1),
+    fromMs: filter.fromMs ?? new Date(year, 0, 1).getTime(),
+    toMs: filter.toMs ?? new Date(year + 1, 0, 1).getTime(),
   });
 
   const rows = await preparedRows(
     connection,
     `
       SELECT
-        CAST(epoch(date_trunc('day', sent_at)) * 1000.0 AS DOUBLE) AS day_ms,
+        CAST(epoch(date_trunc('day', ${localSentAt})) * 1000.0 AS DOUBLE) AS day_ms,
         CAST(COUNT(*) AS DOUBLE) AS message_count
       FROM messages
       WHERE ${msg.clause}
       GROUP BY 1
       ORDER BY 1 ASC
     `,
-    msg.params,
+    [localOffsetSec, ...msg.params],
   );
 
   const days = rows.map((row) => ({
@@ -1003,8 +1016,10 @@ export async function dayMessages(
     throw new Error("dayMs is required.");
   }
   const filter = optionalFilter(params);
-  const fromMs = dayMs;
-  const toMs = dayMs + 86_400_000;
+  // dayMs is a local calendar day encoded as UTC midnight (see messageHeatmap).
+  const localOffsetMs = localUtcOffsetSeconds() * 1000;
+  const fromMs = dayMs - localOffsetMs;
+  const toMs = fromMs + 86_400_000;
   const msg = messagesWhere({ ...filter, fromMs, toMs });
   const limit = boundedInteger(optionalNumber(params, "limit"), 200, 1, 1_000);
 
@@ -1258,6 +1273,11 @@ function personalInfoFields(payloadJson: string): FootprintPersonalInfoField[] {
     }
   }
 
+  const pathLabel =
+    typeof record.path === "string"
+      ? personalInfoLabelFromPath(record.path)
+      : null;
+
   const fields: FootprintPersonalInfoField[] = [];
   for (const [key, value] of Object.entries(data)) {
     if (
@@ -1275,10 +1295,23 @@ function personalInfoFields(payloadJson: string): FootprintPersonalInfoField[] {
     }
     const display = personalInfoValue(value);
     if (display !== null) {
-      fields.push({ key, value: display });
+      // Instagram leaves rows as `{ value, timestamp }` — the readable label
+      // lives in the JSON path, not the key.
+      const label = key === "value" || key === "href" ? pathLabel ?? key : key;
+      fields.push({ key: label, value: display });
     }
   }
   return fields;
+}
+
+/** "$.profile_user[0].string_map_data.Email" → "Email". */
+function personalInfoLabelFromPath(path: string): string | null {
+  const last = path.split(".").filter(Boolean).at(-1);
+  if (last === undefined || last.startsWith("$")) {
+    return null;
+  }
+  const cleaned = last.replace(/\[\d+\]$/, "").replace(/_/g, " ").trim();
+  return cleaned.length > 0 ? cleaned : null;
 }
 
 function personalInfoValue(value: unknown): string | null {
