@@ -48,6 +48,8 @@ import type {
   MediaListResult,
   MessageCursor,
   MessageHeatmapParams,
+  MessageRankParams,
+  MessageRankResult,
   MessageItem,
   MessagesPageParams,
   MessagesPageResult,
@@ -414,7 +416,9 @@ const WRAPPED_CRINGE_COMMENTS_SQL = `
   WHERE kind = 'comment'
     AND json_extract_string(payload, '$.text') IS NOT NULL
     AND trim(json_extract_string(payload, '$.text')) <> ''
-  ORDER BY occurred_at ASC
+  ORDER BY 
+    CASE WHEN occurred_at <= current_date - INTERVAL 3 YEAR THEN 0 ELSE 1 END ASC,
+    random()
   LIMIT 12
 `;
 
@@ -455,7 +459,8 @@ const WRAPPED_FIRST_IMAGE_SQL = `
     AND conversation IS NOT NULL
     AND zip_path IS NOT NULL
     AND zip_path NOT LIKE 'omitted://%'
-  ORDER BY taken_at ASC NULLS LAST, rowid ASC
+    AND taken_at <= current_date - INTERVAL 3 YEAR
+  ORDER BY random()
   LIMIT 8
 `;
 
@@ -513,6 +518,11 @@ export async function executeNamedQuery<Name extends QueryName>(
       return (await conversationList(
         connection,
         params as ConversationListParams | undefined,
+      )) as QueryResultByName[Name];
+    case "messageRank":
+      return (await messageRank(
+        connection,
+        params as MessageRankParams,
       )) as QueryResultByName[Name];
     case "messagesPage":
       return (await messagesPage(
@@ -659,6 +669,41 @@ export async function conversationList(
     items: rows.map(conversationListItem),
     limit,
     offset,
+  };
+}
+
+export async function messageRank(
+  connection: AsyncDuckDBConnection,
+  rawParams: MessageRankParams,
+): Promise<MessageRankResult> {
+  const params = requiredRecord(rawParams, "messageRank parameters");
+  const rowId = optionalNumber(params, "rowId");
+  if (rowId === undefined) throw new Error("rowId is required.");
+  const sentAtMs = optionalNumber(params, "sentAtMs");
+  if (sentAtMs === undefined) throw new Error("sentAtMs is required.");
+  const filter = messagesWhere(
+    (params.filter as MessageRankParams["filter"]) ?? {},
+  );
+
+  const row = onlyRow(
+    await preparedRows(
+      connection,
+      `
+      SELECT CAST(COUNT(*) AS DOUBLE) AS rank
+      FROM messages
+      WHERE ${filter.clause}
+        AND (
+          epoch(sent_at) * 1000.0 < CAST(? AS DOUBLE)
+          OR (epoch(sent_at) * 1000.0 = CAST(? AS DOUBLE) AND rowid <= CAST(? AS BIGINT))
+        )
+      `,
+      [...filter.params, sentAtMs, sentAtMs, rowId],
+    ),
+    "message rank",
+  );
+
+  return {
+    rank: readNumber(row, "rank"),
   };
 }
 

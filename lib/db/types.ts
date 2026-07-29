@@ -16,6 +16,7 @@ export const QUERY_NAMES = [
   "footprint",
   "surpriseMemory",
   "filterOptions",
+  "messageRank",
 ] as const;
 
 export type QueryName = (typeof QUERY_NAMES)[number];
@@ -135,6 +136,16 @@ export interface SearchResult {
   groups: SearchGroup[];
   limit: number;
   offset: number;
+}
+
+export interface MessageRankParams {
+  filter?: ArchiveFilter;
+  rowId: number;
+  sentAtMs: number;
+}
+
+export interface MessageRankResult {
+  rank: number;
 }
 
 export type ActivityGranularity = "day" | "month";
@@ -401,6 +412,8 @@ export interface FilterOptionsResult {
   }>;
   activeFromMs: number | null;
   activeToMs: number | null;
+  owners: Record<string, string>;
+  globalArchiveOwnerName: string | null;
 }
 
 export interface WrappedContact {
@@ -531,6 +544,7 @@ export interface QueryParamsByName {
   footprint: { filter?: ConversationListParams["filter"] } | undefined;
   surpriseMemory: { filter?: ConversationListParams["filter"] } | undefined;
   filterOptions: undefined;
+  messageRank: MessageRankParams;
 }
 
 export interface QueryResultByName {
@@ -551,6 +565,7 @@ export interface QueryResultByName {
   footprint: FootprintResult;
   surpriseMemory: SurpriseMemoryResult;
   filterOptions: FilterOptionsResult;
+  messageRank: MessageRankResult;
 }
 
 export type QueryArgs<Name extends QueryName> =
@@ -591,7 +606,9 @@ export interface IngestApi {
   ingest(
     file: File,
     onProgress: IngestProgressCallback,
+    options?: { append?: boolean },
   ): Promise<IngestSummary>;
+  detectArchive(file: File): Promise<string | null>;
   query<Name extends QueryName>(
     name: Name,
     ...args: QueryArgs<Name>

@@ -55,7 +55,7 @@ type SearchViewProps = {
   hasSearched: boolean;
   initialTerm?: string;
   onSearch: (term: string) => void;
-  onOpenConversation?: (conversation: string) => void;
+  onOpenConversation?: (conversation: string, targetMessage?: { rowId: number; sentAtMs: number }) => void;
 };
 
 export function SearchView({
@@ -187,30 +187,36 @@ export function SearchView({
                   {hits.map((hit, index) => (
                     <li
                       key={`${String(hit.sentAt)}-${hit.sender}-${index}`}
-                      className="border-b border-ink/20 py-3 last:border-b-0"
+                      className="border-b border-ink/20 last:border-b-0"
                     >
-                      <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <UserText className="font-body text-xs font-semibold text-teal">
-                          {hit.sender}
-                        </UserText>
-                        <time
-                          dateTime={new Date(hit.sentAt).toISOString()}
-                          className="font-display text-[11px] uppercase tracking-[0.08em] text-body"
-                        >
-                          {formatDateTime(hit.sentAt)}
-                        </time>
-                      </div>
-                      <p
-                        dir="auto"
-                        className="mt-2 whitespace-pre-wrap break-words font-body text-[15px] leading-7 text-ink [unicode-bidi:isolate]"
+                      <button
+                        type="button"
+                        className="interactive-row block w-full py-3 text-left"
+                        onClick={() => onOpenConversation?.(conversation, { rowId: hit.rowId ?? 0, sentAtMs: Number(hit.sentAt) })}
                       >
-                        {highlightSnippet(
-                          hit.snippet,
-                          hit.matchTerms?.length
-                            ? hit.matchTerms
-                            : highlightTerms,
-                        )}
-                      </p>
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <UserText className="font-body text-xs font-semibold text-teal">
+                            {hit.sender}
+                          </UserText>
+                          <time
+                            dateTime={new Date(hit.sentAt).toISOString()}
+                            className="font-display text-[11px] uppercase tracking-[0.08em] text-body"
+                          >
+                            {formatDateTime(hit.sentAt)}
+                          </time>
+                        </div>
+                        <p
+                          dir="auto"
+                          className="mt-2 whitespace-pre-wrap break-words font-body text-[15px] leading-7 text-ink [unicode-bidi:isolate]"
+                        >
+                          {highlightSnippet(
+                            hit.snippet,
+                            hit.matchTerms?.length
+                              ? hit.matchTerms
+                              : highlightTerms,
+                          )}
+                        </p>
+                      </button>
                     </li>
                   ))}
                 </ol>

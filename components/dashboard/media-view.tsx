@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 
 import { ArchivePanel } from "@/components/dashboard/archive-panel";
+import { AudioPlayer } from "@/components/dashboard/audio-player";
+import { VideoPlayer } from "@/components/dashboard/video-player";
 import { PageControl } from "@/components/dashboard/page-control";
 import { VintagePhoto } from "@/components/capsule/vintage-photo";
 import { StatePanel } from "@/components/state-panel";
@@ -138,58 +140,43 @@ function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
             />
           </div>
         </button>
-      ) : (
-        <div className="overflow-hidden border-2 border-ink bg-cream shadow-panel">
-          <div className="grid aspect-square place-items-center bg-paper/60 px-3">
-            {omittedFromExport ? (
-              <div className="text-center font-body text-sm text-ink/75">
-                <ImageIcon aria-hidden="true" className="mx-auto mb-2 size-6" />
-                Omitted from export
+          ) : item.kind === "audio" && url && !error && !omittedFromExport ? (
+            <AudioPlayer src={url} title={fileName} />
+          ) : item.kind === "video" && url && !error && !omittedFromExport ? (
+            <VideoPlayer src={url} title={fileName} />
+          ) : (
+            <div className="overflow-hidden border-2 border-ink bg-cream shadow-panel">
+              <div className="grid aspect-square place-items-center bg-paper/60 px-3">
+                {omittedFromExport ? (
+                  <div className="text-center font-body text-sm text-ink/75">
+                    <ImageIcon aria-hidden="true" className="mx-auto mb-2 size-6" />
+                    Omitted from export
+                  </div>
+                ) : !visible || (!url && !error) ? (
+                  <LoaderCircle
+                    aria-label="Loading media"
+                    className="size-5 animate-spin text-ink/60 motion-reduce:animate-none"
+                  />
+                ) : error || isHeic ? (
+                  <div className="text-center font-body text-sm text-ink/75">
+                    <FileQuestion aria-hidden="true" className="mx-auto mb-2 size-6" />
+                    <span dir="auto" className="mt-1 block [unicode-bidi:isolate]">
+                      <bdi>{isHeic ? "HEIC — not previewable here" : fileName}</bdi>
+                    </span>
+                  </div>
+                ) : (
+                  <a
+                    href={url ?? undefined}
+                    download={fileName}
+                    className="font-display text-sm font-bold text-teal underline"
+                  >
+                    Open attachment
+                  </a>
+                )}
               </div>
-            ) : !visible || (!url && !error) ? (
-              <LoaderCircle
-                aria-label="Loading media"
-                className="size-5 animate-spin text-ink/60 motion-reduce:animate-none"
-              />
-            ) : error || isHeic ? (
-              <div className="text-center font-body text-sm text-ink/75">
-                <FileQuestion aria-hidden="true" className="mx-auto mb-2 size-6" />
-                <span dir="auto" className="mt-1 block [unicode-bidi:isolate]">
-                  <bdi>{isHeic ? "HEIC — not previewable here" : fileName}</bdi>
-                </span>
-              </div>
-            ) : item.kind === "video" ? (
-              <video
-                src={url ?? undefined}
-                controls
-                preload="metadata"
-                aria-label={label}
-                className="max-h-full max-w-full bg-ink object-contain"
-              />
-            ) : item.kind === "audio" ? (
-              <div className="flex w-full flex-col items-center gap-3 px-2">
-                <Mic aria-hidden="true" className="size-6 text-teal" />
-                <audio
-                  src={url ?? undefined}
-                  controls
-                  preload="metadata"
-                  aria-label={label}
-                  className="w-full max-w-full"
-                />
-              </div>
-            ) : (
-              <a
-                href={url ?? undefined}
-                download={fileName}
-                className="font-display text-sm font-bold text-teal underline"
-              >
-                Open attachment
-              </a>
-            )}
-          </div>
-        </div>
-      )}
-      <div className="mt-2 min-w-0 px-0.5">
+            </div>
+          )}
+          <div className="mt-2 min-w-0 px-0.5">
         <UserText className="block truncate font-body text-sm font-semibold text-ink">
           {conversationLabel ?? (omittedFromExport ? "Omitted media" : fileName)}
         </UserText>
@@ -284,16 +271,6 @@ export function MediaView({
       />
     );
   }
-  if (totalCount === 0) {
-    return (
-      <StatePanel
-        icon={ImageIcon}
-        title="No media match"
-        description="Nothing shows for these filters — or this export has no supported media."
-      />
-    );
-  }
-
   const bucketLabel =
     BUCKETS.find((entry) => entry.id === kind)?.label ?? "Media";
 
@@ -330,7 +307,6 @@ export function MediaView({
 
       <ArchivePanel
         title={`${bucketLabel} // ${pluralize(totalCount, "file")}`}
-        subtitle="Images, voice notes, and video stay in separate boxes so tiles don’t collide. Opened on demand from your ZIP."
         bodyClassName="!p-0"
       >
         {items.length === 0 ? (
