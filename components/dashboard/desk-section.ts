@@ -6,4 +6,5 @@ export type DeskSection =
   | "activity"
   | "search"
   | "footprint"
+  | "identity"
   | "export";

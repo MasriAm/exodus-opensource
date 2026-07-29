@@ -30,6 +30,7 @@ export function isOutgoingSender(
   sender: string,
   conversation: string,
   pageSenders: readonly string[],
+  platformOwner?: string | null,
 ): boolean {
   const normalize = (value: string) =>
     value
@@ -38,15 +39,25 @@ export function isOutgoingSender(
       .replace(/[^\p{L}\p{N}]+/gu, "");
   const s = normalize(sender);
   const c = normalize(conversation);
+
+  // If we have a globally determined platform owner, trust it definitively.
+  if (platformOwner) {
+    return s === normalize(platformOwner);
+  }
+
+  // Thread title often matches the other person (slug or display name).
+  // In WhatsApp, unnamed groups are named after the OTHER participants.
+  // So if the sender's name is in the thread title, they are almost certainly NOT you.
+  if (c && (s === c || c.includes(s) || s.includes(c))) {
+    return false;
+  }
+
+  // --- Fallback heuristics if platformOwner is unavailable ---
   const uniqueSenders = [...new Set(pageSenders.filter(Boolean))];
   const unique = [...new Set(uniqueSenders.map(normalize).filter(Boolean))];
 
   if (unique.length <= 2) {
-    // Thread title often matches the other person (slug or display name).
-    if (c && (s === c || c.includes(s) || s.includes(c))) {
-      return false;
-    }
-    // Otherwise prefer Latin-script participant as "you" in bilingual chats.
+    // Prefer Latin-script participant as "you" in bilingual chats.
     const latinSelf = uniqueSenders.find(
       (entry) => !containsArabic(entry) && /[A-Za-z]/.test(entry),
     );

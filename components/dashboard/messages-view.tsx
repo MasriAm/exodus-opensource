@@ -12,6 +12,7 @@ import { isOutgoingSender } from "@/lib/ui-text";
 import { cn } from "@/lib/utils";
 
 export type ConversationItem = {
+  platform: string;
   conversation: string;
   messageCount: number;
   lastMessageAt: number | string | Date;
@@ -24,6 +25,7 @@ export type MessageItem = {
   sentAt: number | string | Date;
   text: string | null;
   mediaRef: string | null;
+  platform: string;
 };
 
 type MessagesViewProps = {
@@ -34,6 +36,8 @@ type MessagesViewProps = {
   error: string | null;
   page: number;
   totalPages: number;
+  owners: Record<string, string>;
+  globalArchiveOwnerName: string | null;
   onSelectConversation: (conversation: string) => void;
   onChangePage: (page: number) => void;
 };
@@ -61,6 +65,8 @@ export function MessagesView({
   error,
   page,
   totalPages,
+  owners,
+  globalArchiveOwnerName,
   onSelectConversation,
   onChangePage,
 }: MessagesViewProps) {
@@ -109,7 +115,7 @@ export function MessagesView({
           <div className="flex max-h-44 overflow-auto lg:max-h-[min(55vh,28rem)] lg:block">
             {conversations.map((conversation) => (
               <button
-                key={conversation.conversation}
+                key={`${conversation.platform}:${conversation.conversation}`}
                 type="button"
                 onClick={() => onSelectConversation(conversation.conversation)}
                 className={cn(
@@ -186,6 +192,7 @@ export function MessagesView({
                     message.sender,
                     selectedConversation,
                     senders,
+                    owners[message.platform],
                   );
 
                   return (

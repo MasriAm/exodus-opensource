@@ -270,6 +270,8 @@ export async function deskHome(
       ...msg.params,
       ...msg.params,
       ...msg.params,
+      ...msg.params,
+      ...msg.params,
     ]),
     "desk overview",
   );
@@ -1119,6 +1121,7 @@ export async function footprint(
         SELECT
           kind,
           COALESCE(
+            nullif(trim(regexp_extract(replace(json_extract_string(payload, '$.href'), '/_u/', '/'), 'instagram\\.com/([^/?#]+)', 1)), ''),
             nullif(trim(json_extract_string(payload, '$.value')), ''),
             nullif(trim(json_extract_string(payload, '$.name')), '')
           ) AS username,
@@ -1127,11 +1130,12 @@ export async function footprint(
         WHERE ${evt.clause}
           AND kind IN ('follower', 'following')
           AND COALESCE(
+            nullif(trim(regexp_extract(replace(json_extract_string(payload, '$.href'), '/_u/', '/'), 'instagram\\.com/([^/?#]+)', 1)), ''),
             nullif(trim(json_extract_string(payload, '$.value')), ''),
             nullif(trim(json_extract_string(payload, '$.name')), '')
           ) IS NOT NULL
         ORDER BY occurred_at DESC
-        LIMIT 100
+        LIMIT 10000
       `,
       evt.params,
     )
@@ -1342,6 +1346,8 @@ export async function filterOptions(
   conversations: Array<{ platform: string; conversation: string; messageCount: number }>;
   activeFromMs: number | null;
   activeToMs: number | null;
+  owners: Record<string, string>;
+  globalArchiveOwnerName: string | null;
 }> {
   const platforms = (
     await queryRows(
@@ -1387,10 +1393,46 @@ export async function filterOptions(
     "filter range",
   );
 
+  const ownersRows = await queryRows(
+    connection,
+    `
+      SELECT platform, sender
+      FROM (
+        SELECT platform, sender, ROW_NUMBER() OVER (PARTITION BY platform ORDER BY COUNT(*) DESC) as rank
+        FROM messages
+        GROUP BY platform, sender
+      ) WHERE rank = 1
+    `
+  );
+  const owners: Record<string, string> = {};
+  for (const row of ownersRows) {
+    owners[readString(row, "platform")] = readString(row, "sender");
+  }
+
+  const globalOwnerRow = await queryRows(
+    connection,
+    `
+      SELECT platform, json_extract_string(payload, '$.name') AS name
+      FROM events
+      WHERE kind = 'archive_owner'
+    `
+  );
+  let globalArchiveOwnerName: string | null = null;
+  for (const row of globalOwnerRow) {
+    const platform = readString(row, "platform");
+    const name = readNullableString(row, "name");
+    if (name) {
+      owners[platform] = name;
+      globalArchiveOwnerName = name;
+    }
+  }
+
   return {
     platforms,
     conversations,
     activeFromMs: readNullableNumber(range, "active_from_ms"),
     activeToMs: readNullableNumber(range, "active_to_ms"),
+    owners,
+    globalArchiveOwnerName,
   };
 }

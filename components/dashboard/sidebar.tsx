@@ -10,6 +10,7 @@ const CORE_NAV = [
   { id: "desk", label: "Overview" },
   { id: "messages", label: "Messages" },
   { id: "people", label: "People" },
+  { id: "identity", label: "Merged Contacts" },
   { id: "media", label: "Media" },
   { id: "activity", label: "Calendar" },
   { id: "search", label: "Search" },
@@ -71,7 +72,7 @@ export function DashboardSidebar({
   );
 
   return (
-    <aside className="relative flex overflow-hidden bg-rail text-white lg:h-screen lg:max-h-screen lg:w-[230px] lg:shrink-0 lg:flex-col">
+    <aside className="relative flex overflow-hidden bg-rail text-white lg:sticky lg:top-0 lg:h-screen lg:max-h-screen lg:w-[230px] lg:shrink-0 lg:flex-col">
       <div className="sidebar-grain" aria-hidden="true" />
       <div className="relative z-[1] flex items-center justify-between gap-3 px-5 py-4 lg:block lg:px-6 lg:pb-4 lg:pt-7">
         <Link

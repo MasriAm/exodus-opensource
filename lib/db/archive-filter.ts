@@ -2,13 +2,14 @@
  * Shared archive filter — always applied in SQL, never by filtering rows in React.
  */
 
-export type ArchivePlatform = "instagram" | "whatsapp";
+export type ArchivePlatform = "instagram" | "whatsapp" | "facebook";
 
 export type ArchiveFilter = {
   fromMs?: number | null;
   toMs?: number | null;
   platform?: string | null;
   conversation?: string | null;
+  unifiedAliases?: { platform: string; conversation: string }[] | null;
 };
 
 export type SqlParameter = string | number | boolean | null;
@@ -49,7 +50,8 @@ export function normalizeArchiveFilter(
     typeof raw?.conversation === "string" && raw.conversation.trim().length > 0
       ? raw.conversation.trim()
       : null;
-  return { fromMs, toMs, platform, conversation };
+  const unifiedAliases = raw?.unifiedAliases && raw.unifiedAliases.length > 0 ? raw.unifiedAliases : null;
+  return { fromMs, toMs, platform, conversation, unifiedAliases };
 }
 
 export function isArchiveFilterActive(filter: ArchiveFilter | null | undefined): boolean {
@@ -78,6 +80,17 @@ export function messagesWhere(
     params.push(normalized.platform);
   }
   if (
+    (options?.includeConversation ?? true) &&
+    normalized.unifiedAliases !== null
+  ) {
+    const aliasParts = normalized.unifiedAliases.map(() => {
+      return `(${col("platform")} = ? AND ${col("conversation")} = ?)`;
+    });
+    parts.push(`(${aliasParts.join(" OR ")})`);
+    for (const alias of normalized.unifiedAliases) {
+      params.push(alias.platform, alias.conversation);
+    }
+  } else if (
     (options?.includeConversation ?? true) &&
     normalized.conversation !== null
   ) {
@@ -111,7 +124,15 @@ export function mediaWhere(
     parts.push(`${col("platform")} = ?`);
     params.push(normalized.platform);
   }
-  if (normalized.conversation !== null) {
+  if (normalized.unifiedAliases !== null) {
+    const aliasParts = normalized.unifiedAliases.map(() => {
+      return `(${col("platform")} = ? AND ${col("conversation")} = ?)`;
+    });
+    parts.push(`(${aliasParts.join(" OR ")})`);
+    for (const alias of normalized.unifiedAliases) {
+      params.push(alias.platform, alias.conversation);
+    }
+  } else if (normalized.conversation !== null) {
     parts.push(`${col("conversation")} = ?`);
     params.push(normalized.conversation);
   }
@@ -154,7 +175,15 @@ export function eventsWhere(
     parts.push(`${col("occurred_at")} < epoch_ms(CAST(? AS BIGINT))`);
     params.push(normalized.toMs);
   }
-  if (normalized.conversation !== null && options?.conversationJsonPath) {
+  if (normalized.unifiedAliases !== null && options?.conversationJsonPath) {
+    const aliasParts = normalized.unifiedAliases.map(() => {
+      return `(${col("platform")} = ? AND json_extract_string(${col("payload")}, '${options.conversationJsonPath}') = ?)`;
+    });
+    parts.push(`(${aliasParts.join(" OR ")})`);
+    for (const alias of normalized.unifiedAliases) {
+      params.push(alias.platform, alias.conversation);
+    }
+  } else if (normalized.conversation !== null && options?.conversationJsonPath) {
     parts.push(
       `json_extract_string(${col("payload")}, '${options.conversationJsonPath}') = ?`,
     );
@@ -182,5 +211,6 @@ export function mergeFilters(
     toMs: b.toMs ?? a.toMs,
     platform: b.platform ?? a.platform,
     conversation: b.conversation ?? a.conversation,
+    unifiedAliases: b.unifiedAliases ?? a.unifiedAliases,
   };
 }

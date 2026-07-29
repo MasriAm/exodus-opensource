@@ -176,16 +176,6 @@ export function DeskHome({
           subtitle="A random memory from the archive — press again for another."
         >
           <div id="surprise-memory" className="space-y-4">
-            <PressButton
-              type="button"
-              onClick={onSurprise}
-              disabled={surpriseLoading}
-              className="w-full sm:w-auto"
-            >
-              {surpriseLoading
-                ? "Finding a memory…"
-                : "Show me a random memory"}
-            </PressButton>
             {surpriseEmpty && !surprise && !surpriseLoading ? (
               <p
                 className="font-body text-[15px] font-medium text-ink/75"
@@ -222,16 +212,18 @@ export function DeskHome({
                     />
                   </div>
                 ) : null}
-                <button
-                  type="button"
-                  className="mt-3 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-teal transition-colors hover:text-ink hover:underline disabled:cursor-not-allowed disabled:opacity-40"
-                  onClick={onSurprise}
-                  disabled={surpriseLoading}
-                >
-                  Another memory
-                </button>
               </figure>
             ) : null}
+            <PressButton
+              type="button"
+              onClick={onSurprise}
+              disabled={surpriseLoading}
+              className="w-full sm:w-auto"
+            >
+              {surpriseLoading
+                ? "Finding a memory…"
+                : "Show me a random memory"}
+            </PressButton>
           </div>
         </ArchivePanel>
       </div>

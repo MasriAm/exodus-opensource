@@ -13,7 +13,7 @@ import {
   loadSyntheticInstagramFile,
   preloadSyntheticInstagram,
 } from "@/lib/demo-archive";
-import type { IngestProgress } from "@/lib/db/types";
+import type { IngestProgress, IngestSummary } from "@/lib/db/types";
 import { friendlyError } from "@/lib/errors";
 import {
   FALLBACK_LOADING_CAPTIONS,
@@ -53,6 +53,8 @@ export function HomeClient() {
   const [progress, setProgress] = useState<IngestProgress | null>(null);
   const [progressPercent, setProgressPercent] = useState<number>();
   const [error, setError] = useState<string | null>(null);
+  const [queuedExports, setQueuedExports] = useState<{ file: File; platform: string }[]>([]);
+  const [detecting, setDetecting] = useState(false);
 
   useEffect(() => {
     const flash = consumeSessionFlash();
@@ -67,8 +69,8 @@ export function HomeClient() {
     preloadSceneImages();
   }, []);
 
-  const importArchive = useCallback(
-    async (file: File, sceneStartedAt = performance.now()) => {
+  const importArchives = useCallback(
+    async (exportsToProcess: { file: File; platform: string }[], sceneStartedAt = performance.now()) => {
       if (!api) {
         setError("The private worker is still starting. Try again in a moment.");
         setBusy(false);
@@ -88,28 +90,53 @@ export function HomeClient() {
       setProgress(initial);
       setProgressPercent(2);
       markIngesting(initial);
+      
+      let totalCounts: IngestSummary["counts"] = { messages: 0, media: 0, events: 0 };
+      let lastSummary: IngestSummary | null = null;
+      const totalFiles = exportsToProcess.length;
 
       try {
-        const summary = await api.ingest(file, (next) => {
-          setProgress(next);
-          markIngesting(next);
-          // Parse/load callbacks alternate stages; never let the bar or scene jump backward.
-          const stageFloor = STAGE_PERCENT[next.stage];
-          const measuredPercent =
-            next.total !== null && next.total > 0
-              ? Math.round((next.done / next.total) * 100)
-              : stageFloor;
-          const blended = Math.max(stageFloor, measuredPercent);
-          setProgressPercent((previous) =>
-            Math.min(98, Math.max(previous ?? 2, blended, 2)),
-          );
-        });
+        for (let i = 0; i < totalFiles; i++) {
+          const { file } = exportsToProcess[i];
+          const append = i > 0;
+          const progressOffset = (i / totalFiles) * 100;
+          const progressScale = 1 / totalFiles;
+
+          const summary = await api.ingest(file, (next) => {
+            setProgress({
+                ...next,
+                label: `[${i + 1}/${totalFiles}] ${next.label}`
+            });
+            markIngesting(next);
+            
+            const stageFloor = STAGE_PERCENT[next.stage];
+            const measuredPercent =
+              next.total !== null && next.total > 0
+                ? Math.round((next.done / next.total) * 100)
+                : stageFloor;
+            const blended = Math.max(stageFloor, measuredPercent);
+            
+            setProgressPercent((previous) => {
+                const scaledBlended = progressOffset + (blended * progressScale);
+                return Math.min(98, Math.max(previous ?? 2, scaledBlended, 2));
+            });
+          }, { append });
+          
+          totalCounts.messages += summary.counts.messages;
+          totalCounts.media += summary.counts.media;
+          totalCounts.events += summary.counts.events;
+          lastSummary = summary;
+        }
+        
+        if (!lastSummary) throw new Error("No exports processed");
+        lastSummary.counts = totalCounts;
+
         setProgress({
           stage: "finalizing",
-          label: `Ready: ${summary.counts.messages.toLocaleString()} messages`,
+          label: `Ready: ${totalCounts.messages.toLocaleString()} messages`,
           done: 1,
           total: 1,
-          rows: summary.counts,
+          rows: totalCounts,
         });
         setProgressPercent(100);
 
@@ -122,11 +149,11 @@ export function HomeClient() {
         }
 
         flushSync(() => {
-          markLive(summary);
+          markLive(lastSummary!);
         });
         router.push("/wrapped");
       } catch (ingestError: unknown) {
-        console.error("Could not import the selected archive.", ingestError);
+        console.error("Could not import the selected archives.", ingestError);
         markReady();
         setError(
           friendlyError(
@@ -141,6 +168,44 @@ export function HomeClient() {
     },
     [api, markIngesting, markLive, markReady, router],
   );
+
+  const handleFileDropped = useCallback(
+    async (file: File) => {
+      if (!api) {
+        setError("The private worker is still starting. Try again in a moment.");
+        return;
+      }
+      setDetecting(true);
+      setError(null);
+      try {
+        const platform = await api.detectArchive(file);
+        if (platform) {
+          setQueuedExports((current) => [...current, { file, platform }]);
+        } else {
+          setError(
+            "The archive could not be recognized. Check the export format and try again.",
+          );
+        }
+      } catch (err: unknown) {
+        console.error("Format detection failed", err);
+        setError("An error occurred while detecting the archive format.");
+      } finally {
+        setDetecting(false);
+      }
+    },
+    [api],
+  );
+
+  const confirmImport = useCallback(() => {
+    if (queuedExports.length > 0) {
+      void importArchives(queuedExports);
+      setQueuedExports([]);
+    }
+  }, [importArchives, queuedExports]);
+
+  const removeExport = useCallback((index: number) => {
+    setQueuedExports((current) => current.filter((_, i) => i !== index));
+  }, []);
 
   const importDemo = useCallback(async () => {
     const sceneStartedAt = performance.now();
@@ -165,7 +230,7 @@ export function HomeClient() {
         rows: { messages: 0, media: 0, events: 0 },
       });
       setProgressPercent(8);
-      await importArchive(file, sceneStartedAt);
+      await importArchives([{ file, platform: "Instagram" }], sceneStartedAt);
     } catch (demoError: unknown) {
       console.error("Could not load the synthetic export.", demoError);
       markReady();
@@ -179,16 +244,19 @@ export function HomeClient() {
       setProgress(null);
       setProgressPercent(undefined);
     }
-  }, [importArchive, markReady]);
+  }, [importArchives, markReady]);
 
   return (
     <HomeShell
-      busy={busy}
+      busy={busy || detecting}
       workerReady={Boolean(api)}
       progress={progress}
       progressPercent={progressPercent}
       error={error}
-      onFile={(file) => void importArchive(file)}
+      queuedExports={queuedExports}
+      onConfirmImport={confirmImport}
+      onRemoveExport={removeExport}
+      onFile={handleFileDropped}
       onDemo={() => void importDemo()}
     />
   );

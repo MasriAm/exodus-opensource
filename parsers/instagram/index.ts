@@ -207,12 +207,11 @@ function connectionEntryInfo(path: string): ConnectionEntryInfo | null {
 }
 
 function isPersonalInformationPath(path: string): boolean {
-  const sequenceIndex = containsPathSequence(path, [
-    "personal_information",
-    "personal_information.json",
-  ]);
-  const segments = entryPathSegments(path);
-  return sequenceIndex >= 0 && segments.length === sequenceIndex + 2;
+  const segments = entryPathSegments(path).map((s) => s.toLowerCase());
+  if (segments.length < 2) return false;
+  const last = segments[segments.length - 1];
+  const prev = segments[segments.length - 2];
+  return last === "personal_information.json" && (prev === "personal_information" || prev === "account_information");
 }
 
 function isCommentsPath(path: string): boolean {
@@ -222,7 +221,7 @@ function isCommentsPath(path: string): boolean {
   if (commentsIndex < 0 || commentsIndex !== segments.length - 2) {
     return false;
   }
-  return /^post_comments(?:_\d+)?\.json$/i.test(segments[commentsIndex + 1]);
+  return /\.json$/i.test(segments[commentsIndex + 1]);
 }
 
 function isAdsInterestsPath(path: string): boolean {
@@ -267,6 +266,9 @@ function normalizeProfileField(value: string): "username" | "bio" | null {
 }
 
 function inferMediaKind(path: string, fallback: MediaKind): MediaKind {
+  if (fallback !== "other") {
+    return fallback;
+  }
   const pathWithoutQuery = path.split(/[?#]/, 1)[0].toLowerCase();
   const extension = pathWithoutQuery.includes(".")
     ? pathWithoutQuery.slice(pathWithoutQuery.lastIndexOf(".") + 1)
@@ -503,6 +505,35 @@ async function parsePersonalInformation(
     const repaired = repairInstagramStrings(raw);
     const timedRecords: TimedPersonalRecord[] = [];
     findTimedPersonalRecords(repaired, "$", timedRecords);
+
+    // Attempt to extract the global archive owner's name
+    if (isRecord(repaired) && Array.isArray(repaired.profile_user) && isRecord(repaired.profile_user[0])) {
+      const stringMap = repaired.profile_user[0].string_map_data;
+      if (isRecord(stringMap)) {
+        const nameObj = stringMap["Name"] ?? stringMap["name"];
+        const usernameObj = stringMap["Username"] ?? stringMap["username"];
+        let ownerName = null;
+        if (isRecord(nameObj) && typeof nameObj.value === "string") {
+          ownerName = nameObj.value;
+        } else if (isRecord(usernameObj) && typeof usernameObj.value === "string") {
+          ownerName = usernameObj.value;
+        }
+        
+        if (ownerName) {
+          await batch.add(
+            {
+              table: "events",
+              platform: "instagram",
+              kind: "archive_owner",
+              occurred_at_ms: 0,
+              payload: stringifyJson({ name: ownerName }, path),
+            },
+            path,
+            "Extracting archive owner name…",
+          );
+        }
+      }
+    }
 
     // Untimed profile fields cannot satisfy the normalized event model without
     // inventing a date, so only records carrying their own timestamp are kept.
