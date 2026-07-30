@@ -984,6 +984,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
               setActiveView("search");
             }}
             onOpenPerson={openPerson}
+            onOpenMessage={openMessages}
             onOpenActivity={() => setActiveView("activity")}
             onOpenMedia={() => setActiveView("media")}
             onSurprise={onSurprise}

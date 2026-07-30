@@ -145,6 +145,64 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
     data.calls.length > 0 ||
     data.systemNotes.length > 0;
 
+  const profileSnapshots = useMemo(() => {
+    if (!data?.profileHistory || data.profileHistory.length === 0) return [];
+    
+    const sorted = [...data.profileHistory].sort((a, b) => a.occurredAtMs - b.occurredAtMs);
+    
+    // Group by exact timestamp to detect simultaneous changes
+    const grouped = new Map<number, typeof sorted>();
+    for (const change of sorted) {
+      if (!grouped.has(change.occurredAtMs)) grouped.set(change.occurredAtMs, []);
+      grouped.get(change.occurredAtMs)!.push(change);
+    }
+    const uniqueTimestamps = Array.from(grouped.keys()).sort((a, b) => a - b);
+
+    // Fallback username if there are no username changes
+    const fallbackUsername = data?.personalInfo.flatMap(p => p.fields).find(f => f.key.toLowerCase().includes("username"))?.value ?? "Unknown";
+
+    const snaps: Array<{ username: string; bio: string; startDateMs: number; endDateMs: number | null; changed: "username" | "bio" | "both" | "initial" }> = [];
+    
+    let currentUsername = sorted.find((r) => r.field === "username")?.value ?? fallbackUsername;
+    let currentBio = sorted.find((r) => r.field === "bio")?.value ?? "—";
+    
+    for (const ts of uniqueTimestamps) {
+      const changes = grouped.get(ts)!;
+      let userChanged = false;
+      let bioChanged = false;
+      
+      for (const change of changes) {
+        if (change.field === "username") {
+          currentUsername = change.value;
+          userChanged = true;
+        }
+        if (change.field === "bio") {
+          currentBio = change.value;
+          bioChanged = true;
+        }
+      }
+      
+      let changedLabel: "username" | "bio" | "both" | "initial" = "initial";
+      if (userChanged && bioChanged) changedLabel = "both";
+      else if (userChanged) changedLabel = "username";
+      else if (bioChanged) changedLabel = "bio";
+      
+      const last = snaps[snaps.length - 1];
+      if (last) {
+        last.endDateMs = ts;
+      }
+      snaps.push({
+        username: currentUsername,
+        bio: currentBio,
+        startDateMs: ts,
+        endDateMs: null,
+        changed: changedLabel,
+      });
+    }
+    
+    return snaps.reverse();
+  }, [data?.profileHistory, data?.personalInfo]);
+
   if (!hasAnything) {
     return (
       <StatePanel
@@ -161,53 +219,44 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
         block below is a separate part of the export.
       </p>
 
-      {data.profileHistory.length > 0 || data.interestsByYear.length > 0 ? (
-        <div className="grid items-start gap-5 lg:grid-cols-2">
+      {data.profileHistory.length > 0 || data.followEvents.length > 0 ? (
+        <div className="grid items-stretch gap-5 lg:grid-cols-2">
           {data.profileHistory.length > 0 ? (
             <ArchivePanel
+              className="h-150"
               title="Profile iterations"
-              subtitle="Each row is either a username change or a bio update from your Instagram export — labeled so you can tell which."
+              subtitle="A timeline of your distinct profile states. Identical updates are grouped together."
+              bodyClassName="flex flex-col min-h-0"
             >
-              <ul className="space-y-4">
-                {data.profileHistory.map((row) => {
-                  const isUsername = row.field === "username";
-                  const isBio = row.field === "bio";
-                  const kindLabel = isUsername
-                    ? "Username change"
-                    : isBio
-                      ? "Bio update"
-                      : row.field;
+              <ul className="flex-1 space-y-4 overflow-y-auto pr-4 min-h-0">
+                {profileSnapshots.map((snap) => {
+                  const startYear = new Date(snap.startDateMs).getUTCFullYear();
+                  const endYear = snap.endDateMs ? new Date(snap.endDateMs).getUTCFullYear() : "Present";
+                  const dateLabel = startYear === endYear ? startYear.toString() : `${startYear} - ${endYear}`;
+
                   return (
                     <li
-                      key={`${row.field}-${row.occurredAtMs}-${row.value}`}
+                      key={`${snap.startDateMs}-${snap.username}-${snap.bio}`}
                       className="border-b border-ink/20 pb-3 last:border-b-0 last:pb-0"
                     >
                       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                        <span
-                          className={cn(
-                            "inline-flex border px-1.5 py-0.5 font-display text-[10px] font-bold uppercase tracking-[0.08em]",
-                            isUsername
-                              ? "border-teal bg-teal-wash text-teal"
-                              : isBio
-                                ? "border-ink/40 bg-paper text-ink/80"
-                                : "border-ink/30 bg-cream text-ink/70",
-                          )}
-                        >
-                          {kindLabel}
+                        <span className="inline-flex border border-ink/40 bg-paper px-1.5 py-0.5 font-display text-[10px] font-bold uppercase tracking-[0.08em] text-ink/80">
+                          {dateLabel}
                         </span>
+                        {snap.changed !== "initial" ? (
+                          <span className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-teal">
+                            {snap.changed === "both" ? "Username & Bio changed" : `${snap.changed} changed`}
+                          </span>
+                        ) : null}
                         <span className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/60">
-                          {formatDate(row.occurredAtMs)}
+                          {formatDate(snap.startDateMs)}
                         </span>
                       </div>
                       <p className="mt-2 font-body text-[13px] text-ink/70">
-                        {isUsername
-                          ? "Changed username to"
-                          : isBio
-                            ? "Updated bio to"
-                            : "Changed to"}
+                        @{snap.username}
                       </p>
-                      <UserText className="mt-0.5 block font-body text-[16px] font-semibold text-ink">
-                        {isUsername ? `@${row.value}` : row.value}
+                      <UserText className="mt-0.5 block font-body text-[14px] leading-relaxed text-ink">
+                        {snap.bio}
                       </UserText>
                     </li>
                   );
@@ -215,161 +264,124 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
               </ul>
             </ArchivePanel>
           ) : null}
-          {data.interestsByYear.length > 0 && activeYear !== null ? (
+          {data.followEvents.length > 0 ? (
             <ArchivePanel
-              title="The algorithm (interests)"
-              subtitle="See what the machine thought you cared about."
+              className="h-150"
+              title="Followers & following"
+              subtitle="Connections from Instagram's followers/following files. Filter to people you follow who don't follow you back."
+              action={
+                <select
+                  className="border border-ink/30 bg-cream px-2 py-1.5 font-display text-sm outline-none"
+                  value={followKind}
+                  onChange={(event) => {
+                    setFollowKind(event.target.value as FollowFilter);
+                    setFollowLimit(LIST_PAGE);
+                  }}
+                >
+                  <option value="all">
+                    All ({formatNumber(data.followEvents.length)})
+                  </option>
+                  <option value="follower">Followers</option>
+                  <option value="following">Following</option>
+                  <option value="not_back">
+                    Not following back ({formatNumber(notFollowingBack.length)})
+                  </option>
+                </select>
+              }
+              bodyClassName="flex flex-col min-h-0"
             >
-              <div className="flex flex-wrap gap-2 rounded-[2px] border border-dotted border-ink/40 p-3">
-                {topics.map((topic) => (
-                  <TagBox key={topic}>{`> ${topic}`}</TagBox>
-                ))}
-              </div>
-              <div
-                className="mt-4 flex flex-wrap gap-2"
-                role="tablist"
-                aria-label="Interest year"
-              >
-                {years.map((entry) => (
-                  <button
-                    key={entry}
-                    type="button"
-                    role="tab"
-                    aria-selected={entry === activeYear}
-                    onClick={() => setYear(entry)}
-                    className={cn(
-                      "border-2 border-ink px-2.5 py-1 font-display text-xs font-bold transition-colors",
-                      entry === activeYear
-                        ? "border-teal bg-teal-wash text-teal"
-                        : "bg-cream text-ink/75 hover:bg-receipt",
-                    )}
-                  >
-                    {entry}
-                  </button>
-                ))}
-              </div>
+              <label className="mb-3 block">
+                <span className="meta-caps text-[11px] text-ink/75">
+                  Search usernames
+                </span>
+                <input
+                  value={followQuery}
+                  onChange={(event) => {
+                    setFollowQuery(event.target.value);
+                    setFollowLimit(LIST_PAGE);
+                  }}
+                  dir="auto"
+                  placeholder="@someone…"
+                  className="mt-1 w-full border-b border-ink/40 bg-transparent py-1.5 font-body text-[15px] outline-none"
+                />
+              </label>
+              <p className="mb-2 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/70">
+                Showing {formatNumber(shownFollows.length)} of{" "}
+                {formatNumber(visibleFollows.length)}
+              </p>
+              {shownFollows.length === 0 ? (
+                <p className="font-body text-[15px] font-medium text-ink/75">
+                  Nobody matches this filter.
+                </p>
+              ) : (
+                <ul className="flex-1 divide-y divide-ink/20 overflow-y-auto border border-ink/20 bg-receipt pr-4 min-h-0">
+                  {shownFollows.map((row) => (
+                    <li
+                      key={`${row.kind}-${row.username}-${row.occurredAtMs}`}
+                      className="flex items-baseline justify-between gap-3 px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p
+                          className="truncate font-display text-xs font-bold text-ink"
+                          dir="auto"
+                        >
+                          {row.username}
+                        </p>
+                        <p className="font-display text-[10px] uppercase tracking-[0.08em] text-ink/65">
+                          {followKind === "not_back"
+                            ? "you follow · no follow back"
+                            : row.kind}
+                        </p>
+                      </div>
+                      <span className="shrink-0 font-display text-[11px] text-ink/70">
+                        {formatDate(row.occurredAtMs)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <ShowMoreButton
+                remaining={visibleFollows.length - shownFollows.length}
+                onClick={() => setFollowLimit((value) => value + LIST_PAGE)}
+              />
             </ArchivePanel>
           ) : null}
         </div>
       ) : null}
 
-      {data.personalInfo.length > 0 ? (
+      {data.interestsByYear.length > 0 && activeYear !== null ? (
         <ArchivePanel
-          title="Personal information"
-          subtitle="Fields Instagram listed under personal information in the export."
+          title="The algorithm (interests)"
+          subtitle="See what the machine thought you cared about."
         >
-          <ul className="space-y-3">
-            {data.personalInfo.map((row) => (
-              <li
-                key={`${row.occurredAtMs}-${row.path}`}
-                className="border border-ink/20 bg-receipt px-3 py-3"
-              >
-                <p className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/75">
-                  {row.path || "personal_information"} ·{" "}
-                  {formatDate(row.occurredAtMs)}
-                </p>
-                <dl className="mt-2 space-y-1">
-                  {row.fields.map((field) => (
-                    <div
-                      key={`${field.key}-${field.value}`}
-                      className="flex flex-wrap gap-x-3 gap-y-1"
-                    >
-                      <dt className="font-display text-xs font-bold text-teal">
-                        {field.key}
-                      </dt>
-                      <dd
-                        className="font-body text-[15px] font-medium text-ink"
-                        dir="auto"
-                      >
-                        {field.value}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              </li>
+          <div className="flex max-h-100 flex-wrap content-start gap-2 overflow-y-auto rounded-xs border border-dotted border-ink/40 p-3 pr-4">
+            {topics.map((topic) => (
+              <TagBox key={topic}>{`> ${topic}`}</TagBox>
             ))}
-          </ul>
-        </ArchivePanel>
-      ) : null}
-
-      {data.followEvents.length > 0 ? (
-        <ArchivePanel
-          title="Followers & following"
-          subtitle="Connections from Instagram's followers/following files. Filter to people you follow who don't follow you back."
-          action={
-            <select
-              className="border border-ink/30 bg-cream px-2 py-1.5 font-display text-sm outline-none"
-              value={followKind}
-              onChange={(event) => {
-                setFollowKind(event.target.value as FollowFilter);
-                setFollowLimit(LIST_PAGE);
-              }}
-            >
-              <option value="all">
-                All ({formatNumber(data.followEvents.length)})
-              </option>
-              <option value="follower">Followers</option>
-              <option value="following">Following</option>
-              <option value="not_back">
-                Not following back ({formatNumber(notFollowingBack.length)})
-              </option>
-            </select>
-          }
-        >
-          <label className="mb-3 block">
-            <span className="meta-caps text-[11px] text-ink/75">
-              Search usernames
-            </span>
-            <input
-              value={followQuery}
-              onChange={(event) => {
-                setFollowQuery(event.target.value);
-                setFollowLimit(LIST_PAGE);
-              }}
-              dir="auto"
-              placeholder="@someone…"
-              className="mt-1 w-full border-b border-ink/40 bg-transparent py-1.5 font-body text-[15px] outline-none"
-            />
-          </label>
-          <p className="mb-2 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/70">
-            Showing {formatNumber(shownFollows.length)} of{" "}
-            {formatNumber(visibleFollows.length)}
-          </p>
-          {shownFollows.length === 0 ? (
-            <p className="font-body text-[15px] font-medium text-ink/75">
-              Nobody matches this filter.
-            </p>
-          ) : (
-            <ul className="divide-y divide-ink/20 border border-ink/20 bg-receipt">
-              {shownFollows.map((row) => (
-                <li
-                  key={`${row.kind}-${row.username}-${row.occurredAtMs}`}
-                  className="flex items-baseline justify-between gap-3 px-3 py-2.5"
-                >
-                  <div className="min-w-0">
-                    <p
-                      className="truncate font-display text-xs font-bold text-ink"
-                      dir="auto"
-                    >
-                      {row.username}
-                    </p>
-                    <p className="font-display text-[10px] uppercase tracking-[0.08em] text-ink/65">
-                      {followKind === "not_back"
-                        ? "you follow · no follow back"
-                        : row.kind}
-                    </p>
-                  </div>
-                  <span className="shrink-0 font-display text-[11px] text-ink/70">
-                    {formatDate(row.occurredAtMs)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <ShowMoreButton
-            remaining={visibleFollows.length - shownFollows.length}
-            onClick={() => setFollowLimit((value) => value + LIST_PAGE)}
-          />
+          </div>
+          <div
+            className="mt-4 flex flex-wrap gap-2"
+            role="tablist"
+            aria-label="Interest year"
+          >
+            {years.map((entry) => (
+              <button
+                key={entry}
+                type="button"
+                role="tab"
+                aria-selected={entry === activeYear}
+                onClick={() => setYear(entry)}
+                className={cn(
+                  "border-2 border-ink px-2.5 py-1 font-display text-xs font-bold transition-colors",
+                  entry === activeYear
+                    ? "border-teal bg-teal-wash text-teal"
+                    : "bg-cream text-ink/75 hover:bg-receipt",
+                )}
+              >
+                {entry}
+              </button>
+            ))}
+          </div>
         </ArchivePanel>
       ) : null}
 
@@ -423,7 +435,7 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
               No comments match this year or search.
             </p>
           ) : (
-            <ul className="mt-3 divide-y divide-ink/20 border border-ink/20 bg-receipt">
+            <ul className="mt-3 max-h-100 divide-y divide-ink/20 overflow-y-auto border border-ink/20 bg-receipt pr-4">
               {shownComments.map((comment) => (
                 <li
                   key={`${comment.occurredAtMs}-${comment.text.slice(0, 24)}`}

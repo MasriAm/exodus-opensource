@@ -209,7 +209,7 @@ export function ActivityHeatmapView({
           </p>
           <div className="inline-block min-w-max">
             <div
-              className="mb-1 grid gap-[2px] sm:gap-[3px]"
+              className="mb-1 grid gap-0.5 sm:gap-0.75"
               style={{
                 gridTemplateColumns: `repeat(${weeks}, minmax(0.55rem, 0.75rem))`,
               }}
@@ -227,9 +227,9 @@ export function ActivityHeatmapView({
               })}
             </div>
 
-            <div className="flex gap-[2px] sm:gap-[3px]">
+            <div className="flex gap-0.5 sm:gap-0.75">
               <div
-                className="grid gap-[2px] sm:gap-[3px]"
+                className="grid gap-0.5 sm:gap-0.75"
                 style={{
                   gridTemplateColumns: `repeat(${weeks}, minmax(0.55rem, 0.75rem))`,
                   gridTemplateRows: "repeat(7, minmax(0.55rem, 0.75rem))",
@@ -258,10 +258,10 @@ export function ActivityHeatmapView({
                         disabled={cell.count === 0}
                         onClick={() => onSelectDay(cell.dayMs)}
                         className={cn(
-                          "size-2.5 min-h-2.5 min-w-2.5 transition-[transform,outline-color] duration-150 enabled:hover:scale-125 enabled:hover:outline enabled:hover:outline-2 enabled:hover:outline-offset-1 enabled:hover:outline-ink/50 disabled:opacity-40 sm:size-3 sm:min-h-3 sm:min-w-3",
+                          "size-2.5 min-h-2.5 min-w-2.5 transition-[transform,outline-color] duration-150 enabled:hover:scale-125 enabled:hover:outline enabled:hover:outline-offset-1 enabled:hover:outline-ink/50 disabled:opacity-40 sm:size-3 sm:min-h-3 sm:min-w-3",
                           heatClass(cell.count, heatmap.maxCount),
                           (selected || isToday) &&
-                            "outline outline-2 outline-offset-1 outline-coral",
+                            "outline-2 outline-offset-1 outline-coral",
                         )}
                       />
                     );

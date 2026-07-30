@@ -1047,6 +1047,27 @@ export async function wrappedStats(
   const interestRows = await queryRows(connection, WRAPPED_INTERESTS_SQL);
   const profileRows = await queryRows(connection, WRAPPED_PROFILE_HISTORY_SQL);
   const firstImageRows = await queryRows(connection, WRAPPED_FIRST_IMAGE_SQL);
+  
+  let fallbackUsername: string | null = null;
+  const ownerRows = await queryRows(connection, "SELECT payload FROM events WHERE kind = 'archive_owner' LIMIT 1");
+  if (ownerRows.length > 0) {
+    const payloadStr = typeof ownerRows[0][0] === 'string' ? ownerRows[0][0] : String(ownerRows[0][0] ?? "");
+    try {
+      fallbackUsername = JSON.parse(payloadStr).name;
+    } catch {}
+  }
+
+  if (!fallbackUsername) {
+    const personalInfoRows = await queryRows(connection, "SELECT payload FROM events WHERE kind = 'personal_info'");
+    for (const row of personalInfoRows) {
+      const payloadStr = typeof row[0] === 'string' ? row[0] : String(row[0] ?? "");
+      const match = /"(?:username|user name|Username)"\s*:\s*(?:\{[^}]*"value"\s*:\s*)?"([^"]+)"/i.exec(payloadStr);
+      if (match) {
+        fallbackUsername = match[1];
+        break;
+      }
+    }
+  }
 
   const messagesByHour = hourRows.map(wrappedHour);
   const peak = messagesByHour.reduce<WrappedHour | null>((current, candidate) => {
@@ -1060,6 +1081,7 @@ export async function wrappedStats(
   const nowMs = Date.now();
 
   return {
+    fallbackUsername,
     totalMessages: readNumber(overview, "total_messages"),
     totalMedia: readNumber(overview, "total_media"),
     activeFromMs: readNullableNumber(overview, "active_from_ms"),

@@ -30,8 +30,9 @@
       "sara_al_haddad": 7,
       "family_group": 14
     },
-    "eventCount": 50,
+    "eventCount": 51,
     "eventsPerKind": {
+      "archive_owner": 1,
       "follower": 18,
       "following": 12,
       "comment": 8,

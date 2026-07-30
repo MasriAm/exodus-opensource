@@ -485,6 +485,7 @@ export interface WrappedFirstImage {
 }
 
 export interface WrappedStatsResult {
+  fallbackUsername: string | null;
   totalMessages: number;
   totalMedia: number;
   activeFromMs: number | null;
