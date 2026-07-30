@@ -1113,8 +1113,8 @@ export function DashboardClient({ api }: DashboardClientProps) {
           messageCount={messageCount}
           onExport={() => setActiveView("export")}
         />
-        {/* Left-aligned in the content column — not centered in the viewport */}
-        <div className="w-full max-w-[1280px] space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+        {/* Full width in the content column */}
+        <div className="w-full space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
           {workerStalled ? (
             <StatePanel
               kind="error"
