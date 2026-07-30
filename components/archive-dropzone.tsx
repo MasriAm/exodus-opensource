@@ -33,6 +33,7 @@ export function ArchiveDropzone({
   const [dragActive, setDragActive] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [guidePlatform, setGuidePlatform] = useState<"instagram" | "whatsapp" | "facebook">("instagram");
 
   const submitFile = (file: File | undefined) => {
     if (!file) {
@@ -141,34 +142,91 @@ export function ArchiveDropzone({
                 <X className="size-4" aria-hidden="true" />
               </button>
             </div>
+            <div className="mt-5 flex gap-2 border-b border-ink/10 pb-2">
+              {(["instagram", "whatsapp", "facebook"] as const).map((platform) => (
+                <button
+                  key={platform}
+                  type="button"
+                  className={cn(
+                    "px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wider transition-colors",
+                    guidePlatform === platform
+                      ? "border-b-2 border-teal text-teal"
+                      : "text-ink/60 hover:text-ink"
+                  )}
+                  onClick={() => setGuidePlatform(platform)}
+                >
+                  {platform}
+                </button>
+              ))}
+            </div>
+
             <ol className="mt-5 space-y-4 font-body text-[15px] font-medium leading-6 text-ink">
-              <li>
-                <span className="font-display text-xs font-bold text-teal">
-                  STEP 1
-                </span>
-                <p className="mt-1">
-                  Instagram app → Settings → Accounts Center → Your information
-                  and permissions → Download your information
-                </p>
-              </li>
-              <li>
-                <span className="font-display text-xs font-bold text-teal">
-                  STEP 2
-                </span>
-                <p className="mt-1">
-                  Request a download. Choose <Mark>JSON</Mark>, not HTML. Range:
-                  All time.
-                </p>
-              </li>
-              <li>
-                <span className="font-display text-xs font-bold text-teal">
-                  STEP 3
-                </span>
-                <p className="mt-1">
-                  Check email for Instagram&apos;s download link, then drop the
-                  .zip here.
-                </p>
-              </li>
+              {guidePlatform === "instagram" && (
+                <>
+                  <li>
+                    <span className="font-display text-xs font-bold text-teal">STEP 1</span>
+                    <p className="mt-1">
+                      Instagram app → Settings → Accounts Center → Your information and permissions → Download your information
+                    </p>
+                  </li>
+                  <li>
+                    <span className="font-display text-xs font-bold text-teal">STEP 2</span>
+                    <p className="mt-1">
+                      Request a download. Choose <Mark>JSON</Mark>, not HTML. Range: All time.
+                    </p>
+                  </li>
+                  <li>
+                    <span className="font-display text-xs font-bold text-teal">STEP 3</span>
+                    <p className="mt-1">
+                      Check email for Instagram&apos;s download link, then drop the .zip here.
+                    </p>
+                  </li>
+                </>
+              )}
+              {guidePlatform === "whatsapp" && (
+                <>
+                  <li>
+                    <span className="font-display text-xs font-bold text-teal">STEP 1</span>
+                    <p className="mt-1">
+                      Open WhatsApp → Settings → Chats → Export Chat
+                    </p>
+                  </li>
+                  <li>
+                    <span className="font-display text-xs font-bold text-teal">STEP 2</span>
+                    <p className="mt-1">
+                      Select a chat, choose <Mark>Attach Media</Mark>, and save the generated .zip file.
+                    </p>
+                  </li>
+                  <li>
+                    <span className="font-display text-xs font-bold text-teal">STEP 3</span>
+                    <p className="mt-1">
+                      Repeat for other chats if desired, and drop the .zip(s) here.
+                    </p>
+                  </li>
+                </>
+              )}
+              {guidePlatform === "facebook" && (
+                <>
+                  <li>
+                    <span className="font-display text-xs font-bold text-teal">STEP 1</span>
+                    <p className="mt-1">
+                      Facebook app → Settings &amp; Privacy → Settings → Download your information
+                    </p>
+                  </li>
+                  <li>
+                    <span className="font-display text-xs font-bold text-teal">STEP 2</span>
+                    <p className="mt-1">
+                      Request a download. Choose <Mark>JSON</Mark>, not HTML. Range: All time.
+                    </p>
+                  </li>
+                  <li>
+                    <span className="font-display text-xs font-bold text-teal">STEP 3</span>
+                    <p className="mt-1">
+                      Check email for Facebook&apos;s download link, then drop the .zip here.
+                    </p>
+                  </li>
+                </>
+              )}
             </ol>
             <button
               type="button"
