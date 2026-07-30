@@ -25,7 +25,7 @@ export function ArchivePanel({
   const titleArabic = titleText !== null && containsArabic(titleText);
 
   return (
-    <section className={cn("archive-panel", className)}>
+    <section className={cn("archive-panel flex flex-col", className)}>
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-ink/25 px-4 py-3 sm:px-5">
         <div className="min-w-0">
           <h2
@@ -47,7 +47,7 @@ export function ArchivePanel({
         </div>
         {action}
       </div>
-      <div className={cn("px-4 py-4 sm:px-5 sm:py-5", bodyClassName)}>
+      <div className={cn("flex-1 px-4 py-4 sm:px-5 sm:py-5", bodyClassName)}>
         {children}
       </div>
     </section>

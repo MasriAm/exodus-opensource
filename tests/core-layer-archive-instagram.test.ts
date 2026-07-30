@@ -146,10 +146,16 @@ describe("Instagram parser plugin", () => {
       {
         path: "download/personal_information/personal_information.json",
         text: JSON.stringify({
-          profile: [
+          profile_user: [
             {
-              name: "Ù…Ø±ÙŠÙ…",
-              timestamp: 1_700_000_300,
+              title: "Profile User",
+              string_map_data: {
+                Name: {
+                  href: "",
+                  value: "Ù…Ø±ÙŠÙ…",
+                  timestamp: 1_700_000_300,
+                },
+              },
             },
           ],
         }),
@@ -185,7 +191,7 @@ describe("Instagram parser plugin", () => {
 
       expect(batches.every((batch) => batch.length <= 2_000)).toBe(true);
       const rows = batches.flat();
-      expect(rows).toHaveLength(2_006);
+      expect(rows).toHaveLength(2_007);
       for (const row of rows) {
         expect(normalizedRowSchema.safeParse(row).success).toBe(true);
       }
@@ -218,6 +224,7 @@ describe("Instagram parser plugin", () => {
       expect(media[0].taken_at_ms).toBe(1_700_000_000_000);
 
       expect(events.map((row) => row.kind).sort()).toEqual([
+        "archive_owner",
         "follower",
         "following",
         "personal_info",
