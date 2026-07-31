@@ -694,7 +694,7 @@ async function parseComments(
               table: "events",
               platform: "instagram",
               kind: "comment",
-              occurred_at_ms: epochToMilliseconds(datum.timestamp, path),
+              occurred_at_ms: epochToMilliseconds(datum.timestamp ?? 0, path),
               payload: stringifyJson(
                 {
                   text,
@@ -745,7 +745,7 @@ async function parseAdsInterests(
               table: "events",
               platform: "instagram",
               kind: "interest",
-              occurred_at_ms: epochToMilliseconds(datum.timestamp, path),
+              occurred_at_ms: epochToMilliseconds(datum.timestamp ?? 0, path),
               payload: stringifyJson({ topic }, path),
             },
             path,
