@@ -9,7 +9,7 @@ type YearFilmstripProps = {
   className?: string;
 };
 
-/** Concept B borrow: year as a film-strip scrubber above the desk. */
+/** Year scrubber above the desk. */
 export function YearFilmstrip({
   years,
   value,

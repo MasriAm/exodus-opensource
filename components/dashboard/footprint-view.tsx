@@ -153,6 +153,77 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
   const shownFollows = visibleFollows.slice(0, followLimit);
   const shownComments = visibleComments.slice(0, commentLimit);
 
+  const profileSnapshots = useMemo(() => {
+    if (!data?.profileHistory || data.profileHistory.length === 0) return [];
+
+    const sorted = [...data.profileHistory].sort(
+      (a, b) => a.occurredAtMs - b.occurredAtMs,
+    );
+
+    // Group by exact timestamp to detect simultaneous changes
+    const grouped = new Map<number, typeof sorted>();
+    for (const change of sorted) {
+      if (!grouped.has(change.occurredAtMs)) grouped.set(change.occurredAtMs, []);
+      grouped.get(change.occurredAtMs)!.push(change);
+    }
+    const uniqueTimestamps = Array.from(grouped.keys()).sort((a, b) => a - b);
+
+    // Fallback username if there are no username changes
+    const fallbackUsername =
+      data.personalInfo
+        .flatMap((p) => p.fields)
+        .find((f) => f.key.toLowerCase().includes("username"))?.value ??
+      "Unknown";
+
+    const snaps: Array<{
+      username: string;
+      bio: string;
+      startDateMs: number;
+      endDateMs: number | null;
+      changed: "username" | "bio" | "both" | "initial";
+    }> = [];
+
+    let currentUsername =
+      sorted.find((r) => r.field === "username")?.value ?? fallbackUsername;
+    let currentBio = sorted.find((r) => r.field === "bio")?.value ?? "—";
+
+    for (const ts of uniqueTimestamps) {
+      const changes = grouped.get(ts)!;
+      let userChanged = false;
+      let bioChanged = false;
+
+      for (const change of changes) {
+        if (change.field === "username") {
+          currentUsername = change.value;
+          userChanged = true;
+        }
+        if (change.field === "bio") {
+          currentBio = change.value;
+          bioChanged = true;
+        }
+      }
+
+      let changedLabel: "username" | "bio" | "both" | "initial" = "initial";
+      if (userChanged && bioChanged) changedLabel = "both";
+      else if (userChanged) changedLabel = "username";
+      else if (bioChanged) changedLabel = "bio";
+
+      const last = snaps[snaps.length - 1];
+      if (last) {
+        last.endDateMs = ts;
+      }
+      snaps.push({
+        username: currentUsername,
+        bio: currentBio,
+        startDateMs: ts,
+        endDateMs: null,
+        changed: changedLabel,
+      });
+    }
+
+    return snaps.reverse();
+  }, [data?.profileHistory, data?.personalInfo]);
+
   if (error) {
     return (
       <StatePanel kind="error" title="Footprint unavailable" description={error} />
@@ -176,64 +247,6 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
     data.personalInfo.length > 0 ||
     data.calls.length > 0 ||
     data.systemNotes.length > 0;
-
-  const profileSnapshots = useMemo(() => {
-    if (!data?.profileHistory || data.profileHistory.length === 0) return [];
-    
-    const sorted = [...data.profileHistory].sort((a, b) => a.occurredAtMs - b.occurredAtMs);
-    
-    // Group by exact timestamp to detect simultaneous changes
-    const grouped = new Map<number, typeof sorted>();
-    for (const change of sorted) {
-      if (!grouped.has(change.occurredAtMs)) grouped.set(change.occurredAtMs, []);
-      grouped.get(change.occurredAtMs)!.push(change);
-    }
-    const uniqueTimestamps = Array.from(grouped.keys()).sort((a, b) => a - b);
-
-    // Fallback username if there are no username changes
-    const fallbackUsername = data?.personalInfo.flatMap(p => p.fields).find(f => f.key.toLowerCase().includes("username"))?.value ?? "Unknown";
-
-    const snaps: Array<{ username: string; bio: string; startDateMs: number; endDateMs: number | null; changed: "username" | "bio" | "both" | "initial" }> = [];
-    
-    let currentUsername = sorted.find((r) => r.field === "username")?.value ?? fallbackUsername;
-    let currentBio = sorted.find((r) => r.field === "bio")?.value ?? "—";
-    
-    for (const ts of uniqueTimestamps) {
-      const changes = grouped.get(ts)!;
-      let userChanged = false;
-      let bioChanged = false;
-      
-      for (const change of changes) {
-        if (change.field === "username") {
-          currentUsername = change.value;
-          userChanged = true;
-        }
-        if (change.field === "bio") {
-          currentBio = change.value;
-          bioChanged = true;
-        }
-      }
-      
-      let changedLabel: "username" | "bio" | "both" | "initial" = "initial";
-      if (userChanged && bioChanged) changedLabel = "both";
-      else if (userChanged) changedLabel = "username";
-      else if (bioChanged) changedLabel = "bio";
-      
-      const last = snaps[snaps.length - 1];
-      if (last) {
-        last.endDateMs = ts;
-      }
-      snaps.push({
-        username: currentUsername,
-        bio: currentBio,
-        startDateMs: ts,
-        endDateMs: null,
-        changed: changedLabel,
-      });
-    }
-    
-    return snaps.reverse();
-  }, [data?.profileHistory, data?.personalInfo]);
 
   if (!hasAnything) {
     return (

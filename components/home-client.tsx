@@ -91,7 +91,11 @@ export function HomeClient() {
       setProgressPercent(2);
       markIngesting(initial);
       
-      let totalCounts: IngestSummary["counts"] = { messages: 0, media: 0, events: 0 };
+      const totalCounts: IngestSummary["counts"] = {
+        messages: 0,
+        media: 0,
+        events: 0,
+      };
       let lastSummary: IngestSummary | null = null;
       const totalFiles = exportsToProcess.length;
 

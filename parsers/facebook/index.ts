@@ -9,7 +9,6 @@ import { ValidatedBatchEmitter } from "../batch";
 import { parseJson, stringifyJson, validateJson } from "../json";
 import {
   containsPathSequence,
-  entryBasename,
   entryPathSegments,
   hasFacebookMarker,
   resolveReferencedPath,
@@ -57,22 +56,8 @@ const messageThreadSchema = z.object({
   thread_path: z.string().optional(),
 });
 
-const connectionDatumSchema = z.object({
-  href: z.string().optional(),
-  value: z.string().optional(),
-  timestamp: z.number().int(),
-});
-
-const connectionEntrySchema = z.object({
-  title: z.string().optional(),
-  string_list_data: z.array(connectionDatumSchema),
-});
-
-const connectionEntriesSchema = z.array(connectionEntrySchema);
-
 type Attachment = z.infer<typeof attachmentSchema>;
 type FacebookMessage = z.infer<typeof facebookMessageSchema>;
-type ConnectionEntry = z.infer<typeof connectionEntrySchema>;
 type MediaKind = "image" | "video" | "audio" | "other";
 
 interface MessageEntryInfo {
@@ -81,26 +66,14 @@ interface MessageEntryInfo {
   path: string;
 }
 
-interface ConnectionEntryInfo {
-  kind: "follower" | "following";
-  path: string;
-}
-
 interface PendingAttachment {
   attachment: Attachment;
   fallbackKind: MediaKind;
 }
 
-interface TimedPersonalRecord {
-  occurredAtMs: number;
-  path: string;
-  value: Readonly<Record<string, unknown>>;
-}
-
 const IMAGE_EXTENSIONS = new Set(["avif", "bmp", "gif", "heic", "jpeg", "jpg", "png", "webp"]);
 const VIDEO_EXTENSIONS = new Set(["m4v", "mov", "mp4", "webm"]);
 const AUDIO_EXTENSIONS = new Set(["aac", "m4a", "mp3", "ogg", "opus", "wav"]);
-const PERSONAL_TIMESTAMP_KEYS = ["timestamp_ms", "timestamp", "creation_timestamp", "created_timestamp"] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

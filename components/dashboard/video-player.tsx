@@ -60,8 +60,7 @@ export function VideoPlayer({ src, title, className }: VideoPlayerProps) {
       if (isPlaying) {
         videoRef.current.pause();
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        videoRef.current.play();
+        void videoRef.current.play();
       }
     }
   };

@@ -28,7 +28,6 @@ type ActivityHeatmapViewProps = {
   onOpenConversation: (conversation: string, message?: MessageItem) => void;
 };
 
-const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 const MONTH_SHORT = [
   "Jan",
   "Feb",

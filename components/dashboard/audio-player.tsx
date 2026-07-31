@@ -63,8 +63,7 @@ export function AudioPlayer({ src, title, className }: AudioPlayerProps) {
       if (isPlaying) {
         audioRef.current.pause();
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        audioRef.current.play();
+        void audioRef.current.play();
       }
     }
   };

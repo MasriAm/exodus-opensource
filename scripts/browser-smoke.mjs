@@ -17,7 +17,9 @@ const APP_URL = process.env.EXODUS_SMOKE_URL ?? "http://127.0.0.1:4173";
 const DEBUG_PORT = 9_223;
 const TIMEOUT_MS = 90_000;
 const WRITE_SCREENSHOTS = process.env.EXODUS_WRITE_SCREENSHOTS === "1";
-const SCREENSHOT_DIRECTORY = resolve(process.cwd(), "docs");
+const SCREENSHOT_DIRECTORY = resolve(
+  process.env.EXODUS_SCREENSHOT_DIR ?? join(tmpdir(), "exodus-smoke-screenshots"),
+);
 
 function edgeCandidates() {
   if (process.env.BROWSER_PATH) {

@@ -80,6 +80,7 @@ export function DashboardSidebar({
           className="flex items-center gap-1 font-display text-2xl font-bold tracking-[0.22em] text-teal transition-opacity hover:opacity-90 lg:text-[1.65rem]"
           aria-label="Exodus home"
         >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.png" alt="E" className="h-9 w-auto lg:h-11 shrink-0 -mt-1" />
           <span>XODUS</span>
         </Link>

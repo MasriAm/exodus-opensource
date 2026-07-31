@@ -75,7 +75,6 @@ export function MessagesView({
   page,
   totalPages,
   owners,
-  globalArchiveOwnerName,
   onSelectConversation,
   onChangePage,
 }: MessagesViewProps) {

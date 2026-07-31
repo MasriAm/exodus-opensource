@@ -54,7 +54,7 @@ type SearchViewProps = {
   error: string | null;
   hasSearched: boolean;
   initialTerm?: string;
-  /** Person filter that search deliberately does not apply. */
+  /** Sticky person filter ignored by search (shown as a hint). */
   ignoredConversation?: string | null;
   onSearch: (term: string) => void;
   onOpenConversation?: (conversation: string, targetMessage?: { rowId: number; sentAtMs: number }) => void;

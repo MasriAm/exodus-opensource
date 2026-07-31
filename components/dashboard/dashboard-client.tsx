@@ -295,7 +295,6 @@ export function DashboardClient({ api }: DashboardClientProps) {
           unifiedAliases: identity.aliases,
         };
       } else {
-        // The unified identity was deleted; fall back to "Everyone".
         resolvedFilter = {
           ...filter,
           conversation: null,
@@ -319,8 +318,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
     [options],
   );
 
-  // The calendar forces a year so its totals match the grid. That must not
-  // silently follow the reader into Media, Search, or Footprint.
+  // Snapshot the year when opening the calendar; restore it when leaving.
   const yearBeforeCalendarRef = useRef<number | null>(null);
   const leftCalendarRef = useRef(false);
   useEffect(() => {
@@ -335,11 +333,9 @@ export function DashboardClient({ api }: DashboardClientProps) {
       leftCalendarRef.current = false;
       setYear(yearBeforeCalendarRef.current);
     }
-    // `year` is intentionally read as a snapshot when the calendar opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot year on enter only
   }, [activeView]);
 
-  // If a unified identity is deleted while it is the active filter, fallback to Everyone.
   useEffect(() => {
     if (filter.conversation?.startsWith("unified:")) {
       const identityId = filter.conversation.slice(8);
@@ -767,7 +763,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
     return () => {
       active = false;
     };
-  }, [activeView, api, filter.conversation, filter.platform, year, years]);
+  }, [activeView, api, effectiveFilter, year, years]);
 
   const search = useCallback(
     (term: string) => {

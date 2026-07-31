@@ -57,7 +57,7 @@ export type WrappedDeckData = {
   topContacts: Array<{ conversation: string; count: number }>;
   messagesByHour: Array<{ hour: number; count: number }>;
   peakHour: number | null;
-  /** Message count at the peak hour (not a fixed 2–4am window). */
+  /** Messages in the busiest local hour. */
   threeAmEraMessages: number;
   busiestDay: { date: string; messageCount: number } | null;
   topWords: Array<{ word: string; count: number }>;
@@ -134,7 +134,6 @@ function yearsSpanned(fromMs: number | null, toMs: number | null): number {
   return Math.max(1, Math.round((toMs - fromMs) / (365.25 * 86_400_000)));
 }
 
-/** "3am", "3pm", "12pm" — used for the peak-hour era title. */
 function formatHourClock(hour: number): string {
   const normalized = ((Math.round(hour) % 24) + 24) % 24;
   const suffix = normalized < 12 ? "am" : "pm";
