@@ -338,6 +338,10 @@ const DEFAULT_PARAMS: Record<QueryName, unknown> = {
   footprint: undefined,
   surpriseMemory: undefined,
   filterOptions: undefined,
+  messageRank: {
+    rowId: 1,
+    sentAtMs: localMs(2024, 0, 2, 0, 20),
+  },
 };
 
 /** Binds a parameter for every filter clause — catches ordering mistakes. */

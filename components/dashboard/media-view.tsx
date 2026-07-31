@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 
 import { ArchivePanel } from "@/components/dashboard/archive-panel";
+import { AudioPlayer } from "@/components/dashboard/audio-player";
+import { VideoPlayer } from "@/components/dashboard/video-player";
 import { PageControl } from "@/components/dashboard/page-control";
 import { StatePanel } from "@/components/state-panel";
 import { UserText } from "@/components/user-text";
@@ -140,60 +142,46 @@ function LazyMedia({ item, readBlob, onOpen }: LazyMediaProps) {
             />
           </div>
         </button>
+      ) : item.kind === "audio" && url && !error && !omittedFromExport ? (
+        <AudioPlayer src={url} title={fileName} />
+      ) : item.kind === "video" && url && !error && !omittedFromExport ? (
+        <VideoPlayer src={url} title={fileName} />
       ) : (
-        <button
-          type="button"
-          disabled={!url || Boolean(error) || omittedFromExport}
-          className="w-full cursor-pointer text-start disabled:cursor-default"
-          onClick={() => {
-            if (url) {
-              onOpen?.(url, item);
-            }
-          }}
-        >
-          <div className="overflow-hidden border-2 border-ink bg-cream shadow-panel">
-            <div className="grid aspect-square place-items-center bg-paper/60 px-3">
-              {omittedFromExport ? (
-                <div className="text-center font-body text-sm text-ink/75">
-                  <ImageIcon aria-hidden="true" className="mx-auto mb-2 size-6" />
-                  Omitted from export
-                </div>
-              ) : !visible || (!url && !error) ? (
-                <LoaderCircle
-                  aria-label="Loading media"
-                  className="size-5 animate-spin text-ink/60 motion-reduce:animate-none"
-                />
-              ) : error || isHeic ? (
-                <div className="text-center font-body text-sm text-ink/75">
-                  <FileQuestion aria-hidden="true" className="mx-auto mb-2 size-6" />
-                  <span dir="auto" className="mt-1 block [unicode-bidi:isolate]">
-                    <bdi>{isHeic ? "HEIC — not previewable here" : fileName}</bdi>
-                  </span>
-                </div>
-              ) : item.kind === "video" ? (
-                <video
-                  src={url ?? undefined}
-                  preload="metadata"
-                  muted
-                  playsInline
-                  aria-label={label}
-                  className="max-h-full max-w-full bg-ink object-contain"
-                />
-              ) : item.kind === "audio" ? (
-                <div className="flex w-full flex-col items-center gap-3 px-2">
-                  <Mic aria-hidden="true" className="size-6 text-teal" />
-                  <span className="font-display text-[10px] font-bold uppercase tracking-[0.08em] text-ink/70">
-                    Voice note · click to open
-                  </span>
-                </div>
-              ) : (
-                <span className="font-display text-sm font-bold text-teal underline">
-                  Open attachment
+        <div className="overflow-hidden border-2 border-ink bg-cream shadow-panel">
+          <div className="grid aspect-square place-items-center bg-paper/60 px-3">
+            {omittedFromExport ? (
+              <div className="text-center font-body text-sm text-ink/75">
+                <ImageIcon aria-hidden="true" className="mx-auto mb-2 size-6" />
+                Omitted from export
+              </div>
+            ) : !visible || (!url && !error) ? (
+              <LoaderCircle
+                aria-label="Loading media"
+                className="size-5 animate-spin text-ink/60 motion-reduce:animate-none"
+              />
+            ) : error || isHeic ? (
+              <div className="text-center font-body text-sm text-ink/75">
+                <FileQuestion aria-hidden="true" className="mx-auto mb-2 size-6" />
+                <span dir="auto" className="mt-1 block [unicode-bidi:isolate]">
+                  <bdi>{isHeic ? "HEIC — not previewable here" : fileName}</bdi>
                 </span>
-              )}
-            </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled={!url}
+                className="font-display text-sm font-bold text-teal underline disabled:cursor-default"
+                onClick={() => {
+                  if (url) {
+                    onOpen?.(url, item);
+                  }
+                }}
+              >
+                Open attachment
+              </button>
+            )}
           </div>
-        </button>
+        </div>
       )}
       <div className="mt-2 min-w-0 px-0.5">
         <UserText className="block truncate font-body text-sm font-semibold text-ink">
@@ -313,7 +301,6 @@ export function MediaView({
       />
     );
   }
-
   const bucketLabel =
     BUCKETS.find((entry) => entry.id === kind)?.label ?? "Media";
 

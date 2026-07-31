@@ -10,6 +10,7 @@ const CORE_NAV = [
   { id: "desk", label: "Overview" },
   { id: "messages", label: "Messages" },
   { id: "people", label: "People" },
+  { id: "identity", label: "Merged Contacts" },
   { id: "media", label: "Media" },
   { id: "activity", label: "Calendar" },
   { id: "search", label: "Search" },
@@ -71,15 +72,16 @@ export function DashboardSidebar({
   );
 
   return (
-    <aside className="relative flex overflow-hidden bg-rail text-white lg:h-screen lg:max-h-screen lg:w-[230px] lg:shrink-0 lg:flex-col">
+    <aside className="relative flex overflow-hidden bg-rail text-white lg:sticky lg:top-0 lg:h-screen lg:max-h-screen lg:w-[230px] lg:shrink-0 lg:flex-col">
       <div className="sidebar-grain" aria-hidden="true" />
       <div className="relative z-[1] flex items-center justify-between gap-3 px-5 py-4 lg:block lg:px-6 lg:pb-4 lg:pt-7">
         <Link
           href="/"
-          className="font-display text-2xl font-bold tracking-[0.22em] text-teal transition-opacity hover:opacity-90 lg:text-[1.65rem]"
+          className="flex items-center gap-1 font-display text-2xl font-bold tracking-[0.22em] text-teal transition-opacity hover:opacity-90 lg:text-[1.65rem]"
           aria-label="Exodus home"
         >
-          EXODUS
+          <img src="/logo.png" alt="E" className="h-9 w-auto lg:h-11 shrink-0 -mt-1" />
+          <span>XODUS</span>
         </Link>
       </div>
 

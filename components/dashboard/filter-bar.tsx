@@ -4,9 +4,11 @@ import type { ArchiveFilter } from "@/lib/db/archive-filter";
 import { pluralize } from "@/lib/format";
 import type { FilterOptionsResult } from "@/lib/db/types";
 import { cn } from "@/lib/utils";
+import type { UnifiedPerson } from "@/lib/use-unified-identities";
 
 type FilterBarProps = {
   options: FilterOptionsResult | null;
+  unifiedIdentities: UnifiedPerson[];
   filter: ArchiveFilter;
   year: number | null;
   years: number[];
@@ -63,6 +65,7 @@ function LabeledSelect({
 
 export function FilterBar({
   options,
+  unifiedIdentities,
   filter,
   year,
   years,
@@ -78,7 +81,9 @@ export function FilterBar({
     year !== null || Boolean(filter.platform) || Boolean(filter.conversation);
   const yearLabel = year !== null ? String(year) : "All time";
   const platformLabel = filter.platform ?? "All";
-  const personLabel = filter.conversation ?? "Everyone";
+  const personLabel = filter.conversation?.startsWith("unified:") 
+    ? unifiedIdentities.find(id => id.id === filter.conversation?.slice(8))?.displayName ?? filter.conversation
+    : (filter.conversation ?? "Everyone");
 
   return (
     <div className={cn("space-y-3", className)}>
@@ -124,14 +129,25 @@ export function FilterBar({
           className="min-w-[12rem] flex-1"
         >
           <option value="">Everyone</option>
-          {(options?.conversations ?? []).map((item) => (
-            <option
-              key={`${item.platform}:${item.conversation}`}
-              value={item.conversation}
-            >
-              {item.conversation}
-            </option>
-          ))}
+          {unifiedIdentities.length > 0 && (
+            <optgroup label="Merged Contacts">
+              {unifiedIdentities.map((identity) => (
+                <option key={`unified:${identity.id}`} value={`unified:${identity.id}`}>
+                  {identity.displayName}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          <optgroup label="Standalone Chats">
+            {(options?.conversations ?? []).map((item) => (
+              <option
+                key={`${item.platform}:${item.conversation}`}
+                value={item.conversation}
+              >
+                {item.platform}: {item.conversation}
+              </option>
+            ))}
+          </optgroup>
         </LabeledSelect>
         {matchCount !== null ? (
           <p className="ms-auto font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink">

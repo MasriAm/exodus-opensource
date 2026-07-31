@@ -85,7 +85,7 @@ export function resolveSelfSender(
 
 /**
  * Decide if a bubble is outgoing ("you").
- * Prefer an explicit selfSender resolved from the full thread roster.
+ * Prefer a known platform owner, then an explicit selfSender from the thread roster.
  */
 export function isOutgoingSender(
   sender: string,
@@ -93,10 +93,15 @@ export function isOutgoingSender(
   threadSenders: ReadonlyArray<{ sender: string; messageCount: number }> | readonly string[],
   selfSender?: string | null,
   archiveSelfHint?: string | null,
+  platformOwner?: string | null,
 ): boolean {
   const s = normalizeSenderKey(sender);
   if (!s) {
     return false;
+  }
+
+  if (platformOwner) {
+    return s === normalizeSenderKey(platformOwner);
   }
 
   const roster: Array<{ sender: string; messageCount: number }> = Array.isArray(

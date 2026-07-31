@@ -49,6 +49,7 @@ import {
 import { cn } from "@/lib/utils";
 
 export type WrappedDeckData = {
+  fallbackUsername: string | null;
   totalMessages: number;
   totalMedia: number;
   activeFromMs: number | null;
@@ -477,11 +478,9 @@ export function WrappedDeck({
     if (data.cringeComments.length > 0) {
       const comment =
         data.cringeComments[cringeIndex % data.cringeComments.length];
-      const yearsAgo = Math.max(
+      const daysAgo = Math.max(
         1,
-        Math.floor(
-          (Date.now() - comment.occurredAtMs) / (365.25 * 86_400_000),
-        ),
+        Math.floor((Date.now() - comment.occurredAtMs) / 86_400_000),
       );
       const cringePrompt = pickCaption(
         interactive.cringePrompts,
@@ -496,7 +495,7 @@ export function WrappedDeck({
             subline={cringePrompt}
           >
             <p className="meta-caps text-[11px] text-body">
-              On this day {yearsAgo} years ago ·{" "}
+              {daysAgo} days ago ·{" "}
               <Mark>{formatDate(comment.occurredAtMs)}</Mark>
             </p>
             <div className="group relative mt-4 overflow-hidden border-strong bg-cream">
@@ -544,6 +543,49 @@ export function WrappedDeck({
         (row) => row.field === "bio",
       ).length;
       const newest = data.profileHistory[data.profileHistory.length - 1];
+
+      // Group by exact timestamp to detect simultaneous changes
+      const grouped = new Map<number, typeof data.profileHistory>();
+      for (const change of data.profileHistory) {
+        if (!grouped.has(change.occurredAtMs)) grouped.set(change.occurredAtMs, []);
+        grouped.get(change.occurredAtMs)!.push(change);
+      }
+      const uniqueTimestamps = Array.from(grouped.keys()).sort((a, b) => a - b);
+
+      const snapshots: Array<{ username: string; bio: string; occurredAtMs: number; changed: "username" | "bio" | "both" | "initial" }> = [];
+      let currentUsername = data.profileHistory.find((row) => row.field === "username")?.value ?? data.fallbackUsername ?? "Unknown";
+      let currentBio = data.profileHistory.find((row) => row.field === "bio")?.value ?? "—";
+      
+      for (const ts of uniqueTimestamps) {
+        const changes = grouped.get(ts)!;
+        let userChanged = false;
+        let bioChanged = false;
+        
+        for (const change of changes) {
+          if (change.field === "username") {
+            currentUsername = change.value;
+            userChanged = true;
+          }
+          if (change.field === "bio") {
+            currentBio = change.value;
+            bioChanged = true;
+          }
+        }
+        
+        let changedLabel: "username" | "bio" | "both" | "initial" = "initial";
+        if (userChanged && bioChanged) changedLabel = "both";
+        else if (userChanged) changedLabel = "username";
+        else if (bioChanged) changedLabel = "bio";
+        
+        snapshots.push({
+          username: currentUsername,
+          bio: currentBio,
+          occurredAtMs: ts,
+          changed: changedLabel,
+        });
+      }
+      
+      const reversedSnaps = [...snapshots].reverse();
       built.push({
         id: "identity",
         render: () => (
@@ -564,8 +606,7 @@ export function WrappedDeck({
                       as="p"
                       className="font-body text-xl font-bold text-ink"
                     >
-                      {data.profileHistory.find((row) => row.field === "username")
-                        ?.value ?? newest.value}
+                      {data.profileHistory.find((row) => row.field === "username")?.value ?? data.fallbackUsername ?? "Unknown"}
                     </UserText>
                     <p className="meta-caps pt-2">Bio</p>
                     <UserText
@@ -583,29 +624,42 @@ export function WrappedDeck({
               </button>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
-                {[...data.profileHistory].reverse().map((change) => (
+                {reversedSnaps.slice(0, 4).map((snap) => (
                   <CapsuleCard
-                    key={`${change.occurredAtMs}-${change.field}-${change.value}`}
+                    key={`${snap.occurredAtMs}-${snap.username}-${snap.changed}`}
                     className="p-4"
                   >
                     <p className="meta-caps">
-                      {change.field === "username"
-                        ? "Username change"
-                        : change.field === "bio"
-                          ? "Bio update"
-                          : change.field}{" "}
-                      · {formatDate(change.occurredAtMs)}
+                      {snap.changed === "both"
+                        ? "Username & Bio update"
+                        : snap.changed === "username"
+                          ? "Username change"
+                          : snap.changed === "bio"
+                            ? "Bio update"
+                            : "Update"}{" "}
+                      · {formatDate(snap.occurredAtMs)}
                     </p>
-                    <UserText
-                      as="p"
-                      className="mt-2 font-body text-base font-bold text-ink"
-                    >
-                      {change.field === "username"
-                        ? `@${change.value}`
-                        : change.value}
-                    </UserText>
+                    <div className="mt-2 space-y-1">
+                      <UserText
+                        as="p"
+                        className="font-body text-base font-bold text-ink line-clamp-1"
+                      >
+                        @{snap.username}
+                      </UserText>
+                      <UserText
+                        as="p"
+                        className="font-body text-sm text-body line-clamp-2"
+                      >
+                        {snap.bio}
+                      </UserText>
+                    </div>
                   </CapsuleCard>
                 ))}
+                {reversedSnaps.length > 4 && (
+                  <div className="col-span-full mt-2 text-center font-body text-sm font-medium text-body/80">
+                    ...and {reversedSnaps.length - 4} more changes. View your full history in the dashboard.
+                  </div>
+                )}
               </div>
             )}
           </SlideShell>

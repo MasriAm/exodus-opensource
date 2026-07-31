@@ -313,7 +313,8 @@ describe("generated fixtures", () => {
           manifest.instagram.followingCount +
           manifest.instagram.commentCount +
           manifest.instagram.interestCount +
-          manifest.instagram.profileChangeCount,
+          manifest.instagram.profileChangeCount +
+          (manifest.instagram.eventsPerKind.archive_owner ?? 0),
       ).toBe(manifest.instagram.eventCount);
       expect(manifest.instagram.mutualFollowCount).toBeGreaterThan(0);
       expect(manifest.instagram.cringeCommentCount).toBeGreaterThan(0);

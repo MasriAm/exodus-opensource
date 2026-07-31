@@ -25,7 +25,7 @@ type ActivityHeatmapViewProps = {
   year: number | null;
   onChangeYear: (year: number | null) => void;
   onSelectDay: (dayMs: number) => void;
-  onOpenConversation: (conversation: string) => void;
+  onOpenConversation: (conversation: string, message?: MessageItem) => void;
 };
 
 const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -209,12 +209,11 @@ export function ActivityHeatmapView({
           </p>
           <div className="inline-block min-w-max">
             <div
-              className="mb-1 grid gap-[2px] sm:gap-[3px]"
+              className="mb-1 grid gap-0.5 sm:gap-0.75"
               style={{
-                gridTemplateColumns: `1.25rem repeat(${weeks}, minmax(0.55rem, 0.75rem))`,
+                gridTemplateColumns: `repeat(${weeks}, minmax(0.55rem, 0.75rem))`,
               }}
             >
-              <span />
               {Array.from({ length: weeks }).map((_, week) => {
                 const label = monthLabels.find((entry) => entry.week === week);
                 return (
@@ -228,27 +227,17 @@ export function ActivityHeatmapView({
               })}
             </div>
 
-            <div className="flex gap-[2px] sm:gap-[3px]">
-              <div className="flex w-5 flex-col gap-[2px] pt-0 sm:gap-[3px]">
-                {WEEKDAY_LABELS.map((label, index) => (
-                  <span
-                    key={`${label}-${index}`}
-                    className="flex h-2.5 items-center font-display text-[8px] text-ink/75 sm:h-3 sm:text-[9px]"
-                  >
-                    {index % 2 === 1 ? label : ""}
-                  </span>
-                ))}
-              </div>
+            <div className="flex gap-0.5 sm:gap-0.75">
               <div
-                className="grid gap-[2px] sm:gap-[3px]"
+                className="grid gap-0.5 sm:gap-0.75"
                 style={{
                   gridTemplateColumns: `repeat(${weeks}, minmax(0.55rem, 0.75rem))`,
                   gridTemplateRows: "repeat(7, minmax(0.55rem, 0.75rem))",
                   gridAutoFlow: "column",
                 }}
               >
-                {Array.from({ length: weeks }, (_, week) =>
-                  Array.from({ length: 7 }, (_, weekday) => {
+                {Array.from({ length: weeks }).flatMap((_, week) =>
+                  Array.from({ length: 7 }).map((_, weekday) => {
                     const cell = cells[weekday][week];
                     if (!cell) {
                       return (
@@ -269,10 +258,10 @@ export function ActivityHeatmapView({
                         disabled={cell.count === 0}
                         onClick={() => onSelectDay(cell.dayMs)}
                         className={cn(
-                          "size-2.5 min-h-2.5 min-w-2.5 transition-[transform,outline-color] duration-150 enabled:hover:scale-125 enabled:hover:outline enabled:hover:outline-2 enabled:hover:outline-offset-1 enabled:hover:outline-ink/50 disabled:opacity-40 sm:size-3 sm:min-h-3 sm:min-w-3",
+                          "size-2.5 min-h-2.5 min-w-2.5 transition-[transform,outline-color] duration-150 enabled:hover:scale-125 enabled:hover:outline enabled:hover:outline-offset-1 enabled:hover:outline-ink/50 disabled:opacity-40 sm:size-3 sm:min-h-3 sm:min-w-3",
                           heatClass(cell.count, heatmap.maxCount),
                           (selected || isToday) &&
-                            "outline outline-2 outline-offset-1 outline-coral",
+                            "outline-2 outline-offset-1 outline-coral",
                         )}
                       />
                     );
@@ -327,7 +316,7 @@ export function ActivityHeatmapView({
                 <li key={message.rowId} className="border-b border-ink/20">
                   <button
                     type="button"
-                    onClick={() => onOpenConversation(message.conversation)}
+                    onClick={() => onOpenConversation(message.conversation, message)}
                     className="interactive-row flex h-12 w-full items-center gap-4 text-start"
                   >
                     <UserText className="w-28 shrink-0 truncate font-body text-xs font-semibold text-teal sm:w-40">

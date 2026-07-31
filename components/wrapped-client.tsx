@@ -32,6 +32,7 @@ export function WrappedClient({ api }: WrappedClientProps) {
           return;
         }
         setData({
+          fallbackUsername: result.fallbackUsername,
           totalMessages: result.totalMessages,
           totalMedia: result.totalMedia,
           activeFromMs: result.activeFromMs,

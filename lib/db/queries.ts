@@ -52,6 +52,8 @@ import type {
   MediaListResult,
   MessageCursor,
   MessageHeatmapParams,
+  MessageRankParams,
+  MessageRankResult,
   MessageItem,
   MessagesPageParams,
   MessagesPageResult,
@@ -529,6 +531,11 @@ export async function executeNamedQuery<Name extends QueryName>(
         connection,
         params as ConversationListParams | undefined,
       )) as QueryResultByName[Name];
+    case "messageRank":
+      return (await messageRank(
+        connection,
+        params as MessageRankParams,
+      )) as QueryResultByName[Name];
     case "messagesPage":
       return (await messagesPage(
         connection,
@@ -674,6 +681,41 @@ export async function conversationList(
     items: rows.map(conversationListItem),
     limit,
     offset,
+  };
+}
+
+export async function messageRank(
+  connection: AsyncDuckDBConnection,
+  rawParams: MessageRankParams,
+): Promise<MessageRankResult> {
+  const params = requiredRecord(rawParams, "messageRank parameters");
+  const rowId = optionalNumber(params, "rowId");
+  if (rowId === undefined) throw new Error("rowId is required.");
+  const sentAtMs = optionalNumber(params, "sentAtMs");
+  if (sentAtMs === undefined) throw new Error("sentAtMs is required.");
+  const filter = messagesWhere(
+    (params.filter as MessageRankParams["filter"]) ?? {},
+  );
+
+  const row = onlyRow(
+    await preparedRows(
+      connection,
+      `
+      SELECT CAST(COUNT(*) AS DOUBLE) AS rank
+      FROM messages
+      WHERE ${filter.clause}
+        AND (
+          epoch(sent_at) * 1000.0 < CAST(? AS DOUBLE)
+          OR (epoch(sent_at) * 1000.0 = CAST(? AS DOUBLE) AND rowid <= CAST(? AS BIGINT))
+        )
+      `,
+      [...filter.params, sentAtMs, sentAtMs, rowId],
+    ),
+    "message rank",
+  );
+
+  return {
+    rank: readNumber(row, "rank"),
   };
 }
 
@@ -1055,6 +1097,27 @@ export async function wrappedStats(
   const interestRows = await queryRows(connection, WRAPPED_INTERESTS_SQL);
   const profileRows = await queryRows(connection, WRAPPED_PROFILE_HISTORY_SQL);
   const firstImageRows = await queryRows(connection, WRAPPED_FIRST_IMAGE_SQL);
+  
+  let fallbackUsername: string | null = null;
+  const ownerRows = await queryRows(connection, "SELECT payload FROM events WHERE kind = 'archive_owner' LIMIT 1");
+  if (ownerRows.length > 0) {
+    const payloadStr = typeof ownerRows[0][0] === 'string' ? ownerRows[0][0] : String(ownerRows[0][0] ?? "");
+    try {
+      fallbackUsername = JSON.parse(payloadStr).name;
+    } catch {}
+  }
+
+  if (!fallbackUsername) {
+    const personalInfoRows = await queryRows(connection, "SELECT payload FROM events WHERE kind = 'personal_info'");
+    for (const row of personalInfoRows) {
+      const payloadStr = typeof row[0] === 'string' ? row[0] : String(row[0] ?? "");
+      const match = /"(?:username|user name|Username)"\s*:\s*(?:\{[^}]*"value"\s*:\s*)?"([^"]+)"/i.exec(payloadStr);
+      if (match) {
+        fallbackUsername = match[1];
+        break;
+      }
+    }
+  }
 
   const messagesByHour = hourRows.map(wrappedHour);
   const peak = messagesByHour.reduce<WrappedHour | null>((current, candidate) => {
@@ -1068,6 +1131,7 @@ export async function wrappedStats(
   const nowMs = Date.now();
 
   return {
+    fallbackUsername,
     totalMessages: readNumber(overview, "total_messages"),
     totalMedia: readNumber(overview, "total_media"),
     activeFromMs: readNullableNumber(overview, "active_from_ms"),

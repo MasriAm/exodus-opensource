@@ -36,6 +36,7 @@ import type {
 import { thumbCacheClear } from "./thumb-cache";
 
 export interface WorkerClient extends IngestApi {
+  detectArchive(file: File): Promise<string | null>;
   conversationList(
     params?: ConversationListParams,
   ): Promise<ConversationListResult>;
@@ -97,13 +98,22 @@ export function createWorkerClient(): WorkerClient {
     ingest(
       file: File,
       onProgress: IngestProgressCallback,
+      options?: { append?: boolean },
     ): Promise<IngestSummary> {
       ensureActive();
       thumbCacheClear();
       return withTimeout(
-        remote.ingest(file, Comlink.proxy(onProgress)),
+        remote.ingest(file, Comlink.proxy(onProgress), options),
         INGEST_TIMEOUT_MS,
         "ingest",
+      );
+    },
+    detectArchive(file: File): Promise<string | null> {
+      ensureActive();
+      return withTimeout(
+        remote.detectArchive(file),
+        INGEST_TIMEOUT_MS,
+        "detectArchive",
       );
     },
     query,

@@ -62,7 +62,7 @@ interface ActiveArchive {
 class PublicWorkerError extends Error {}
 
 let databasePromise: Promise<DatabaseState> | null = null;
-let activeArchive: ActiveArchive | null = null;
+let activeArchives: ActiveArchive[] = [];
 let operationTail: Promise<void> = Promise.resolve();
 
 const WORKER_OP_TIMEOUT_MS = 45_000;
@@ -240,9 +240,28 @@ function reportParserProgress(
   });
 }
 
+async function detectArchive(file: File): Promise<string | null> {
+  if (!(file instanceof Blob) || typeof file.name !== "string") {
+    return null;
+  }
+  let candidate: ZipEntryMap | null = null;
+  try {
+    candidate = await ZipEntryMap.open(file);
+    const parser = detectParser(candidate.paths());
+    return parser ? parser.displayName : null;
+  } catch {
+    return null;
+  } finally {
+    if (candidate) {
+      await closeCandidate(candidate);
+    }
+  }
+}
+
 async function ingestArchive(
   file: File,
   onProgress: IngestProgressCallback,
+  options?: { append?: boolean }
 ): Promise<IngestSummary> {
   if (!(file instanceof Blob) || typeof file.name !== "string") {
     throw new PublicWorkerError("Choose a ZIP file to import.");
@@ -306,13 +325,17 @@ async function ingestArchive(
     );
   }
 
-  const replacedExistingArchive = activeArchive !== null;
+  const append = options?.append === true;
+  const replacedExistingArchive = !append && activeArchives.length > 0;
   let transactionOpen = false;
   try {
     await database.connection.query(BEGIN_ARCHIVE_REPLACEMENT_SQL);
     transactionOpen = true;
-    for (const sql of CLEAR_ARCHIVE_SQL) {
-      await database.connection.query(sql);
+    
+    if (!append) {
+      for (const sql of CLEAR_ARCHIVE_SQL) {
+        await database.connection.query(sql);
+      }
     }
 
     await parser.parse(
@@ -362,18 +385,27 @@ async function ingestArchive(
     );
   }
 
-  const previousArchive = activeArchive;
-  activeArchive = {
-    entries: candidate,
-    parserId: parser.id,
-    archiveName: file.name,
-  };
-  if (previousArchive) {
-    try {
-      await previousArchive.entries.close();
-    } catch (error: unknown) {
-      console.error("The previous ZIP archive could not be closed.", error);
-    }
+  if (!append) {
+      const previousArchives = activeArchives;
+      activeArchives = [{
+        entries: candidate,
+        parserId: parser.id,
+        archiveName: file.name,
+      }];
+      
+      for (const previous of previousArchives) {
+        try {
+          await previous.entries.close();
+        } catch (error: unknown) {
+          console.error("A previous ZIP archive could not be closed.", error);
+        }
+      }
+  } else {
+      activeArchives.push({
+        entries: candidate,
+        parserId: parser.id,
+        archiveName: file.name,
+      });
   }
 
   return {
@@ -474,14 +506,27 @@ async function readMediaBlob(zipPath: string): Promise<Blob> {
   if (typeof zipPath !== "string" || zipPath.trim().length === 0) {
     throw new PublicWorkerError("Choose a valid media item.");
   }
-  if (!activeArchive) {
+  if (activeArchives.length === 0) {
     throw new PublicWorkerError("Import an archive before opening media.");
   }
+  
+  let targetArchive: ActiveArchive | undefined;
+  for (const archive of activeArchives) {
+    if (archive.entries.has(zipPath)) {
+      targetArchive = archive;
+      break;
+    }
+  }
+  
+  if (!targetArchive) {
+    throw new PublicWorkerError("That media file could not be read from the current archives.");
+  }
+  
   try {
-    return await activeArchive.entries.readBlob(zipPath);
+    return await targetArchive.entries.readBlob(zipPath);
   } catch (error: unknown) {
     console.error(
-      `Media could not be read from ${activeArchive.archiveName}.`,
+      `Media could not be read from ${targetArchive.archiveName}.`,
       error,
     );
     throw new PublicWorkerError(
@@ -568,10 +613,15 @@ function heavyQueryTimeout(name: QueryName): number {
 }
 
 const api: IngestApi = {
-  ingest: (file, onProgress) =>
-    runExclusive(() => ingestArchive(file, onProgress), {
+  ingest: (file, onProgress, options) =>
+    runExclusive(() => ingestArchive(file, onProgress, options), {
       label: "ingest",
       timeoutMs: WORKER_INGEST_TIMEOUT_MS,
+    }),
+  detectArchive: (file) =>
+    runExclusive(() => detectArchive(file), {
+      label: "detectArchive",
+      timeoutMs: WORKER_OP_TIMEOUT_MS,
     }),
   query: <Name extends QueryName>(name: Name, ...args: QueryArgs<Name>) =>
     runExclusive(() => runQuery(name, args[0] as QueryParamsByName[Name]), {

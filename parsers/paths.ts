@@ -44,11 +44,15 @@ export function containsPathSequence(
 
 export function hasInstagramMarker(paths: readonly string[]): boolean {
   return paths.some((path) => {
-    const segments = entryPathSegments(path).map((segment) =>
-      segment.toLowerCase(),
-    );
-    const markerIndex = segments.indexOf("your_instagram_activity");
-    return markerIndex >= 0 && markerIndex < segments.length - 1;
+    const lower = path.toLowerCase();
+    return lower.includes("your_instagram_activity");
+  });
+}
+
+export function hasFacebookMarker(paths: readonly string[]): boolean {
+  return paths.some((path) => {
+    const lower = path.toLowerCase();
+    return lower.includes("your_facebook_activity");
   });
 }
 

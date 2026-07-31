@@ -65,10 +65,53 @@ const connectionDatumSchema = z.object({
   timestamp: z.number().int(),
 });
 
-const connectionEntrySchema = z.object({
-  title: z.string().optional(),
-  string_list_data: z.array(connectionDatumSchema),
+const stringMapDatumSchema = z.object({
+  href: z.string().optional(),
+  value: z.string().optional(),
+  timestamp: z.number().int().optional(),
 });
+
+const connectionEntrySchema = z
+  .object({
+    title: z.string().optional(),
+    string_list_data: z.array(connectionDatumSchema).optional(),
+    string_map_data: z.record(z.string(), stringMapDatumSchema).optional(),
+  })
+  .transform((data) => {
+    const list = data.string_list_data ? [...data.string_list_data] : [];
+    if (data.string_map_data) {
+      let textValue: string | undefined;
+      let timestampValue: number | undefined;
+      let hrefValue: string | undefined;
+
+      if (data.string_map_data["Comment"]?.value) {
+        textValue = data.string_map_data["Comment"].value;
+      }
+      if (data.string_map_data["Time"]?.timestamp !== undefined) {
+        timestampValue = data.string_map_data["Time"].timestamp;
+      }
+
+      for (const val of Object.values(data.string_map_data)) {
+        if (!textValue && val.value) textValue = val.value;
+        if (timestampValue === undefined && val.timestamp !== undefined) {
+          timestampValue = val.timestamp;
+        }
+        if (!hrefValue && val.href) hrefValue = val.href;
+      }
+
+      if (timestampValue !== undefined) {
+        list.push({
+          value: textValue,
+          timestamp: timestampValue,
+          href: hrefValue,
+        });
+      }
+    }
+    return {
+      title: data.title,
+      string_list_data: list,
+    };
+  });
 
 const connectionEntriesSchema = z.array(connectionEntrySchema);
 
@@ -208,12 +251,11 @@ function connectionEntryInfo(path: string): ConnectionEntryInfo | null {
 }
 
 function isPersonalInformationPath(path: string): boolean {
-  const sequenceIndex = containsPathSequence(path, [
-    "personal_information",
-    "personal_information.json",
-  ]);
-  const segments = entryPathSegments(path);
-  return sequenceIndex >= 0 && segments.length === sequenceIndex + 2;
+  const segments = entryPathSegments(path).map((s) => s.toLowerCase());
+  if (segments.length < 2) return false;
+  const last = segments[segments.length - 1];
+  const prev = segments[segments.length - 2];
+  return last === "personal_information.json" && (prev === "personal_information" || prev === "account_information");
 }
 
 function isCommentsPath(path: string): boolean {
@@ -223,7 +265,7 @@ function isCommentsPath(path: string): boolean {
   if (commentsIndex < 0 || commentsIndex !== segments.length - 2) {
     return false;
   }
-  return /^post_comments(?:_\d+)?\.json$/i.test(segments[commentsIndex + 1]);
+  return /\.json$/i.test(segments[commentsIndex + 1]);
 }
 
 function isAdsInterestsPath(path: string): boolean {
@@ -253,14 +295,16 @@ function normalizeProfileField(value: string): "username" | "bio" | null {
   if (
     normalized === "username" ||
     normalized === "user name" ||
-    normalized.startsWith("username")
+    normalized.startsWith("username") ||
+    normalized.includes("username")
   ) {
     return "username";
   }
   if (
     normalized === "bio" ||
     normalized === "biography" ||
-    normalized.startsWith("bio ")
+    normalized.startsWith("bio ") ||
+    normalized.includes("bio")
   ) {
     return "bio";
   }
@@ -268,6 +312,9 @@ function normalizeProfileField(value: string): "username" | "bio" | null {
 }
 
 function inferMediaKind(path: string, fallback: MediaKind): MediaKind {
+  if (fallback !== "other") {
+    return fallback;
+  }
   const pathWithoutQuery = path.split(/[?#]/, 1)[0].toLowerCase();
   const extension = pathWithoutQuery.includes(".")
     ? pathWithoutQuery.slice(pathWithoutQuery.lastIndexOf(".") + 1)
@@ -526,6 +573,35 @@ async function parsePersonalInformation(
     const timedRecords: TimedPersonalRecord[] = [];
     findTimedPersonalRecords(repaired, "$", timedRecords);
 
+    // Attempt to extract the global archive owner's name
+    if (isRecord(repaired) && Array.isArray(repaired.profile_user) && isRecord(repaired.profile_user[0])) {
+      const stringMap = repaired.profile_user[0].string_map_data;
+      if (isRecord(stringMap)) {
+        const nameObj = stringMap["Name"] ?? stringMap["name"];
+        const usernameObj = stringMap["Username"] ?? stringMap["username"];
+        let ownerName = null;
+        if (isRecord(nameObj) && typeof nameObj.value === "string") {
+          ownerName = nameObj.value;
+        } else if (isRecord(usernameObj) && typeof usernameObj.value === "string") {
+          ownerName = usernameObj.value;
+        }
+        
+        if (ownerName) {
+          await batch.add(
+            {
+              table: "events",
+              platform: "instagram",
+              kind: "archive_owner",
+              occurred_at_ms: 0,
+              payload: stringifyJson({ name: ownerName }, path),
+            },
+            path,
+            "Extracting archive owner name…",
+          );
+        }
+      }
+    }
+
     // Untimed profile fields cannot satisfy the normalized event model without
     // inventing a date, so only records carrying their own timestamp are kept.
     for (const record of timedRecords) {
@@ -671,24 +747,33 @@ async function parseProfileChanges(
           if (!isRecord(mapData)) {
             continue;
           }
-          const changed = isRecord(mapData.Changed) ? mapData.Changed : null;
-          const newValue = isRecord(mapData["New Value"])
-            ? mapData["New Value"]
-            : null;
-          const fieldSource =
-            (typeof entry.title === "string" ? entry.title : null) ??
-            (typeof changed?.value === "string" ? changed.value : null) ??
-            "";
-          const field = normalizeProfileField(fieldSource);
+          const getMapData = (key: string) => {
+            const lowerKey = key.toLowerCase();
+            const foundKey = Object.keys(mapData).find((k) => k.toLowerCase() === lowerKey);
+            return foundKey ? mapData[foundKey] : null;
+          };
+
+          const changedRaw = getMapData("Changed");
+          const changed = isRecord(changedRaw) ? changedRaw : null;
+          const newValueRaw = getMapData("New Value");
+          const newValue = isRecord(newValueRaw) ? newValueRaw : null;
+          const titleStr = typeof entry.title === "string" ? entry.title : null;
+          const changedStr = typeof changed?.value === "string" ? changed.value : null;
+
+          let field = normalizeProfileField(changedStr ?? "");
+          if (field === null) {
+            field = normalizeProfileField(titleStr ?? "");
+          }
           const value =
             typeof newValue?.value === "string" ? newValue.value.trim() : "";
-          const timestamp =
-            (typeof newValue?.timestamp === "number"
-              ? newValue.timestamp
-              : null) ??
-            (typeof changed?.timestamp === "number"
-              ? changed.timestamp
-              : null);
+          const changeDateRaw = getMapData("Change Date");
+          const changeDate = isRecord(changeDateRaw) ? changeDateRaw : null;
+          let timestamp = typeof changeDate?.timestamp === "number" && changeDate.timestamp !== 0 ? changeDate.timestamp : null;
+          if (timestamp === null) {
+            timestamp =
+              (typeof newValue?.timestamp === "number" && newValue.timestamp !== 0 ? newValue.timestamp : null) ??
+              (typeof changed?.timestamp === "number" && changed.timestamp !== 0 ? changed.timestamp : null);
+          }
           if (field === null || value.length === 0 || timestamp === null) {
             continue;
           }

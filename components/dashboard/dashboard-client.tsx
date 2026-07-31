@@ -12,6 +12,8 @@ import type {
   ConversationItem,
   MessageItem as MessageViewItem,
 } from "./messages-view";
+import { IdentityManager } from "./identity-manager";
+import { useUnifiedIdentities } from "@/lib/use-unified-identities";
 import type { SearchHit as SearchViewHit } from "./search-view";
 import { DashboardSidebar } from "./sidebar";
 
@@ -145,6 +147,11 @@ const VIEW_LABELS: Record<
     title: "Digital footprint",
     subtitle: "Public comments, interests, and identity changes from the export.",
   },
+  identity: {
+    eyebrow: "Unified Entities",
+    title: "Merged Contacts",
+    subtitle: "Link conversations across different platforms into a unified person.",
+  },
   export: {
     eyebrow: "Portable by design",
     title: "Export",
@@ -159,6 +166,7 @@ function mapMessage(message: MessageItem): MessageViewItem {
     sentAt: message.sentAtMs,
     text: message.text,
     mediaRef: message.mediaRef,
+    platform: message.platform,
   };
 }
 
@@ -204,6 +212,11 @@ const MEDIA_PAGE_SIZE = 24;
 
 export function DashboardClient({ api }: DashboardClientProps) {
   const router = useRouter();
+  const {
+    identities: unifiedIdentities,
+    addIdentity,
+    removeIdentity,
+  } = useUnifiedIdentities();
   const { reloadSession } = useArchiveSession();
   const [activeView, setActiveView] = useState<DeskSection>("desk");
   const [deskRetryToken, setDeskRetryToken] = useState(0);
@@ -271,16 +284,35 @@ export function DashboardClient({ api }: DashboardClientProps) {
   const [footprintError, setFootprintError] = useState<string | null>(null);
 
   const effectiveFilter = useMemo(() => {
+    let resolvedFilter = filter;
+    if (filter.conversation?.startsWith("unified:")) {
+      const identityId = filter.conversation.slice(8);
+      const identity = unifiedIdentities.find(id => id.id === identityId);
+      if (identity) {
+        resolvedFilter = {
+          ...filter,
+          conversation: null,
+          unifiedAliases: identity.aliases,
+        };
+      } else {
+        // The unified identity was deleted; fall back to "Everyone".
+        resolvedFilter = {
+          ...filter,
+          conversation: null,
+        };
+      }
+    }
+
     if (year === null) {
-      return filter;
+      return resolvedFilter;
     }
     const bounds = yearBoundsMs(year);
     return {
-      ...filter,
-      fromMs: filter.fromMs ?? bounds.fromMs,
-      toMs: filter.toMs ?? bounds.toMs,
+      ...resolvedFilter,
+      fromMs: resolvedFilter.fromMs ?? bounds.fromMs,
+      toMs: resolvedFilter.toMs ?? bounds.toMs,
     };
-  }, [filter, year]);
+  }, [filter, year, unifiedIdentities]);
 
   const years = useMemo(
     () => yearsFromRange(options?.activeFromMs ?? null, options?.activeToMs ?? null),
@@ -306,6 +338,17 @@ export function DashboardClient({ api }: DashboardClientProps) {
     // `year` is intentionally read as a snapshot when the calendar opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView]);
+
+  // If a unified identity is deleted while it is the active filter, fallback to Everyone.
+  useEffect(() => {
+    if (filter.conversation?.startsWith("unified:")) {
+      const identityId = filter.conversation.slice(8);
+      const exists = unifiedIdentities.some((id) => id.id === identityId);
+      if (!exists) {
+        setFilter((current) => ({ ...current, conversation: null }));
+      }
+    }
+  }, [filter.conversation, unifiedIdentities, setFilter]);
 
   const showFootprint = Boolean(
     footprint &&
@@ -479,6 +522,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
           fromMs: effectiveFilter.fromMs,
           toMs: effectiveFilter.toMs,
           platform: effectiveFilter.platform,
+          unifiedAliases: effectiveFilter.unifiedAliases,
         },
       })
       .then((result) => {
@@ -518,14 +562,24 @@ export function DashboardClient({ api }: DashboardClientProps) {
         if (!active) {
           return;
         }
-        const nextConversations = conversationResult.items.map(
+        let nextConversations = conversationResult.items.map(
           (conversation): ConversationItem => ({
+            platform: conversation.platform,
             conversation: conversation.conversation,
             messageCount: conversation.messageCount,
             lastMessageAt: conversation.lastMessageAtMs,
             lastSnippet: conversation.preview,
           }),
         );
+        if (effectiveFilter.unifiedAliases && effectiveFilter.unifiedAliases.length > 0) {
+          nextConversations = [{
+            platform: "unified",
+            conversation: "Combined Thread",
+            messageCount: nextConversations.reduce((acc, c) => acc + c.messageCount, 0),
+            lastMessageAt: Math.max(...nextConversations.map(c => Number(c.lastMessageAt))),
+            lastSnippet: nextConversations[0]?.lastSnippet ?? null,
+          }];
+        }
         setConversations(nextConversations);
         setSelectedConversation((current) => {
           if (
@@ -558,7 +612,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
 
   useEffect(() => {
     setMessagesPage(1);
-  }, [selectedConversation, effectiveFilter]);
+  }, [effectiveFilter]);
 
   useEffect(() => {
     setMediaPage(1);
@@ -587,6 +641,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
           fromMs: effectiveFilter.fromMs,
           toMs: effectiveFilter.toMs,
           platform: effectiveFilter.platform,
+          unifiedAliases: effectiveFilter.unifiedAliases,
         },
       })
       .then((result) => {
@@ -685,8 +740,9 @@ export function DashboardClient({ api }: DashboardClientProps) {
       .query("messageHeatmap", {
         year: targetYear,
         filter: {
-          platform: filter.platform,
-          conversation: filter.conversation,
+          platform: effectiveFilter.platform,
+          conversation: effectiveFilter.conversation,
+          unifiedAliases: effectiveFilter.unifiedAliases,
         },
       })
       .then((result) => {
@@ -792,10 +848,33 @@ export function DashboardClient({ api }: DashboardClientProps) {
     setActiveView("people");
   }, []);
 
-  const openMessages = useCallback((conversation: string) => {
-    setSelectedConversation(conversation);
-    setActiveView("messages");
-  }, []);
+  const openMessages = useCallback(
+    (
+      conversation: string,
+      targetMessage?: { rowId: number; sentAtMs: number },
+    ) => {
+      setSelectedConversation(conversation);
+      setActiveView("messages");
+      
+      if (targetMessage) {
+        // Fetch the chronological rank of the message to jump to its page
+        void api
+          .query("messageRank", {
+            rowId: targetMessage.rowId,
+            sentAtMs: targetMessage.sentAtMs,
+            filter: { ...effectiveFilter, conversation },
+          })
+          .then((result) => {
+            const page =
+              Math.floor(Math.max(0, result.rank - 1) / MESSAGES_PAGE_SIZE) + 1;
+            setMessagesPage(page);
+          });
+      } else {
+        setMessagesPage(1);
+      }
+    },
+    [api, effectiveFilter],
+  );
 
   const onSurprise = useCallback(() => {
     setSurpriseLoading(true);
@@ -937,6 +1016,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
               setActiveView("search");
             }}
             onOpenPerson={openPerson}
+            onOpenMessage={openMessages}
             onOpenActivity={() => setActiveView("activity")}
             onOpenMedia={() => setActiveView("media")}
             onSurprise={onSurprise}
@@ -973,7 +1053,12 @@ export function DashboardClient({ api }: DashboardClientProps) {
             error={messagesError}
             page={messagesPage}
             totalPages={messagesTotalPages}
-            onSelectConversation={setSelectedConversation}
+            owners={options?.owners ?? {}}
+            globalArchiveOwnerName={options?.globalArchiveOwnerName ?? null}
+            onSelectConversation={(conv) => {
+              setSelectedConversation(conv);
+              setMessagesPage(1);
+            }}
             onChangePage={setMessagesPage}
           />
         );
@@ -1034,13 +1119,22 @@ export function DashboardClient({ api }: DashboardClientProps) {
             error={footprintError}
           />
         );
+      case "identity":
+        return (
+          <IdentityManager
+            identities={unifiedIdentities}
+            conversations={options?.conversations ?? []}
+            onAddIdentity={addIdentity}
+            onRemoveIdentity={removeIdentity}
+          />
+        );
       case "export":
         return <ExportView exportTable={exportTable} />;
     }
   })();
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-paper lg:flex">
+    <main className="min-h-screen overflow-x-hidden bg-paper lg:flex lg:items-start lg:overflow-visible">
       <DashboardSidebar
         active={activeView}
         onSelect={setActiveView}
@@ -1072,13 +1166,15 @@ export function DashboardClient({ api }: DashboardClientProps) {
               }
             />
           ) : null}
-          {activeView === "messages" ||
+          {activeView === "desk" ||
+          activeView === "messages" ||
           activeView === "people" ||
           activeView === "media" ||
           activeView === "activity" ? (
             <div className="archive-panel p-3 sm:p-4">
               <FilterBar
                 options={options}
+                unifiedIdentities={unifiedIdentities}
                 filter={filter}
                 year={year}
                 years={years}

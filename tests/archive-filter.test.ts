@@ -16,6 +16,7 @@ describe("archive-filter", () => {
       toMs: null,
       platform: null,
       conversation: null,
+      unifiedAliases: null,
     });
     expect(isArchiveFilterActive({})).toBe(false);
   });
@@ -50,6 +51,7 @@ describe("archive-filter", () => {
       toMs: null,
       platform: "whatsapp",
       conversation: "beta",
+      unifiedAliases: null,
     });
   });
 

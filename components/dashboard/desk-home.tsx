@@ -16,6 +16,7 @@ type DeskHomeProps = {
   onOpenPeople: () => void;
   onOpenSearch: (query?: string) => void;
   onOpenPerson: (conversation: string) => void;
+  onOpenMessage: (conversation: string, message: MessageItem) => void;
   onOpenActivity: () => void;
   onOpenMedia: () => void;
   onSurprise: () => void;
@@ -48,6 +49,7 @@ export function DeskHome({
   onOpenPeople,
   onOpenSearch,
   onOpenPerson,
+  onOpenMessage,
   onOpenActivity,
   onOpenMedia,
   onSurprise,
@@ -117,19 +119,25 @@ export function DeskHome({
             subtitle={`${monthName} ${data.onThisDayDay} · ${pluralize(data.onThisDayMessageCount, "message")} across the years`}
             action={<GhostLink onClick={onOpenActivity}>See all →</GhostLink>}
           >
-            <blockquote
-              dir="auto"
-              className="font-body text-xl font-medium leading-8 text-ink sm:text-2xl"
+            <button
+              type="button"
+              className="group text-start focus:outline-none"
+              onClick={() => onOpenMessage(featured.conversation, featured)}
             >
-              “{featured.text ?? "Media attachment"}”
-            </blockquote>
+              <blockquote
+                dir="auto"
+                className="font-body text-xl font-medium leading-8 text-ink sm:text-2xl transition-colors group-hover:text-teal"
+              >
+                “{featured.text ?? "Media attachment"}”
+              </blockquote>
+            </button>
             <p className="mt-4 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/70">
               Sent to:{" "}
               <button
                 type="button"
                 dir="auto"
                 className="text-teal transition-colors hover:text-ink hover:underline"
-                onClick={() => onOpenPerson(featured.conversation)}
+                onClick={() => onOpenMessage(featured.conversation, featured)}
               >
                 @{featured.conversation}
               </button>
@@ -142,7 +150,7 @@ export function DeskHome({
                   <li key={message.rowId}>
                     <button
                       type="button"
-                      onClick={() => onOpenPerson(message.conversation)}
+                      onClick={() => onOpenMessage(message.conversation, message)}
                       className="interactive-row flex w-full items-baseline justify-between gap-3 border-b border-ink/15 py-2.5 text-start last:border-b-0"
                     >
                       <span
@@ -176,16 +184,6 @@ export function DeskHome({
           subtitle="A random memory from the archive — press again for another."
         >
           <div id="surprise-memory" className="space-y-4">
-            <PressButton
-              type="button"
-              onClick={onSurprise}
-              disabled={surpriseLoading}
-              className="w-full sm:w-auto"
-            >
-              {surpriseLoading
-                ? "Finding a memory…"
-                : "Show me a random memory"}
-            </PressButton>
             {surpriseEmpty && !surprise && !surpriseLoading ? (
               <p
                 className="font-body text-[15px] font-medium text-ink/75"
@@ -196,18 +194,24 @@ export function DeskHome({
             ) : null}
             {surprise ? (
               <figure>
-                <blockquote
-                  dir="auto"
-                  className="font-body text-xl font-medium leading-8 text-ink"
+                <button
+                  type="button"
+                  className="group text-start focus:outline-none"
+                  onClick={() => onOpenMessage(surprise.conversation, surprise)}
                 >
-                  “{surprise.text ?? "Media attachment"}”
-                </blockquote>
+                  <blockquote
+                    dir="auto"
+                    className="font-body text-xl font-medium leading-8 text-ink transition-colors group-hover:text-teal"
+                  >
+                    “{surprise.text ?? "Media attachment"}”
+                  </blockquote>
+                </button>
                 <figcaption className="mt-3 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/70">
                   <button
                     type="button"
                     dir="auto"
                     className="text-teal transition-colors hover:text-ink hover:underline"
-                    onClick={() => onOpenPerson(surprise.conversation)}
+                    onClick={() => onOpenMessage(surprise.conversation, surprise)}
                   >
                     @{surprise.conversation}
                   </button>
@@ -222,16 +226,18 @@ export function DeskHome({
                     />
                   </div>
                 ) : null}
-                <button
-                  type="button"
-                  className="mt-3 font-display text-[11px] font-bold uppercase tracking-[0.08em] text-teal transition-colors hover:text-ink hover:underline disabled:cursor-not-allowed disabled:opacity-40"
-                  onClick={onSurprise}
-                  disabled={surpriseLoading}
-                >
-                  Another memory
-                </button>
               </figure>
             ) : null}
+            <PressButton
+              type="button"
+              onClick={onSurprise}
+              disabled={surpriseLoading}
+              className="w-full sm:w-auto"
+            >
+              {surpriseLoading
+                ? "Finding a memory…"
+                : "Show me a random memory"}
+            </PressButton>
           </div>
         </ArchivePanel>
       </div>

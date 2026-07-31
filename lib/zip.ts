@@ -123,6 +123,16 @@ export class ZipEntryMap {
     return [...this.entryPaths];
   }
 
+  has(requestedPath: string): boolean {
+    if (this.closed) return false;
+    try {
+      const path = normalizePath(requestedPath);
+      return this.entries.has(path) || this.aliases.has(path);
+    } catch {
+      return false;
+    }
+  }
+
   /** Uncompressed size when the ZIP central directory provides it; else null. */
   entrySize(path: string): number | null {
     const entry = this.resolve(path);
