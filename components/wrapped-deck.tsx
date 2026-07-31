@@ -46,6 +46,12 @@ import {
   pickCaption,
   type InteractiveStates,
 } from "@/lib/loading-captions";
+import {
+  pushSessionUrl,
+  readWrappedSlideFromLocation,
+  replaceSessionUrl,
+  wrappedSlideHref,
+} from "@/components/dashboard/session-history";
 import { cn } from "@/lib/utils";
 
 export type WrappedDeckData = {
@@ -262,7 +268,7 @@ export function WrappedDeck({
   const goDashboard = useCallback(() => {
     router.push("/dashboard");
   }, [router]);
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(() => readWrappedSlideFromLocation(10_000));
   const [cringeIndex, setCringeIndex] = useState(0);
   const [cringePromptIndex, setCringePromptIndex] = useState(0);
   const [cringeRevealed, setCringeRevealed] = useState(false);
@@ -947,28 +953,50 @@ export function WrappedDeck({
     reduceMotion,
   ]);
 
-  const go = useCallback(
-    (next: number) => {
+  const goToSlide = useCallback(
+    (target: number, mode: "push" | "replace" = "push") => {
       if (slides.length === 0) {
         return;
       }
-      setIndex((current) => {
-        const target = current + next;
-        if (target < 0) {
-          return 0;
-        }
-        if (target >= slides.length) {
-          return slides.length - 1;
-        }
-        return target;
-      });
+      const clamped = Math.max(0, Math.min(target, slides.length - 1));
+      setIndex(clamped);
+      const href = wrappedSlideHref(clamped);
+      const state = { exodusSlide: clamped };
+      if (mode === "replace") {
+        replaceSessionUrl(href, state);
+      } else {
+        pushSessionUrl(href, state);
+      }
     },
     [slides.length],
   );
 
+  const go = useCallback(
+    (next: number) => {
+      goToSlide(index + next, "push");
+    },
+    [goToSlide, index],
+  );
+
   useEffect(() => {
-    setIndex(0);
-  }, [data]);
+    if (!data || slides.length === 0) {
+      return;
+    }
+    const fromUrl = readWrappedSlideFromLocation(slides.length - 1);
+    setIndex(fromUrl);
+    replaceSessionUrl(wrappedSlideHref(fromUrl), { exodusSlide: fromUrl });
+  }, [data, slides.length]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      if (slides.length === 0) {
+        return;
+      }
+      setIndex(readWrappedSlideFromLocation(slides.length - 1));
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [slides.length]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1069,7 +1097,7 @@ export function WrappedDeck({
                   ? "bg-ink shadow-[0_0_0_2px_var(--paper),0_0_0_4px_var(--teal)]"
                   : "bg-transparent",
               )}
-              onClick={() => setIndex(slideIndex)}
+              onClick={() => goToSlide(slideIndex)}
             />
           ))}
         </div>

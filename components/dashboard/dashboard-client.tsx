@@ -36,6 +36,11 @@ import type {
 } from "@/lib/db/types";
 import { friendlyError } from "@/lib/errors";
 import { isQueryTimeoutError } from "@/lib/query-timeout";
+import {
+  deskSectionHref,
+  pushSessionUrl,
+  readDeskSectionFromLocation,
+} from "./session-history";
 
 function SectionLoading({ title }: { title: string }) {
   return (
@@ -218,7 +223,22 @@ export function DashboardClient({ api }: DashboardClientProps) {
     removeIdentity,
   } = useUnifiedIdentities();
   const { reloadSession } = useArchiveSession();
-  const [activeView, setActiveView] = useState<DeskSection>("desk");
+  const [activeView, setActiveView] = useState<DeskSection>(() =>
+    readDeskSectionFromLocation(),
+  );
+
+  const selectView = useCallback((view: DeskSection) => {
+    setActiveView(view);
+    pushSessionUrl(deskSectionHref(view), { exodusView: view });
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setActiveView(readDeskSectionFromLocation());
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
   const [deskRetryToken, setDeskRetryToken] = useState(0);
   const [filter, setFilter] = useState<ArchiveFilter>({});
   const [year, setYear] = useState<number | null>(null);
@@ -839,10 +859,13 @@ export function DashboardClient({ api }: DashboardClientProps) {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [api]);
 
-  const openPerson = useCallback((conversation: string) => {
-    setSelectedPerson(conversation);
-    setActiveView("people");
-  }, []);
+  const openPerson = useCallback(
+    (conversation: string) => {
+      setSelectedPerson(conversation);
+      selectView("people");
+    },
+    [selectView],
+  );
 
   const openMessages = useCallback(
     (
@@ -850,10 +873,9 @@ export function DashboardClient({ api }: DashboardClientProps) {
       targetMessage?: { rowId: number; sentAtMs: number },
     ) => {
       setSelectedConversation(conversation);
-      setActiveView("messages");
-      
+      selectView("messages");
+
       if (targetMessage) {
-        // Fetch the chronological rank of the message to jump to its page
         void api
           .query("messageRank", {
             rowId: targetMessage.rowId,
@@ -869,7 +891,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
         setMessagesPage(1);
       }
     },
-    [api, effectiveFilter],
+    [api, effectiveFilter, selectView],
   );
 
   const onSurprise = useCallback(() => {
@@ -1004,17 +1026,17 @@ export function DashboardClient({ api }: DashboardClientProps) {
           <DeskHome
             data={desk}
             readBlob={readMediaBlob}
-            onOpenPeople={() => setActiveView("people")}
+            onOpenPeople={() => selectView("people")}
             onOpenSearch={(query) => {
               if (query) {
                 setSearchSeed(query);
               }
-              setActiveView("search");
+              selectView("search");
             }}
             onOpenPerson={openPerson}
             onOpenMessage={openMessages}
-            onOpenActivity={() => setActiveView("activity")}
-            onOpenMedia={() => setActiveView("media")}
+            onOpenActivity={() => selectView("activity")}
+            onOpenMedia={() => selectView("media")}
             onSurprise={onSurprise}
             surprise={surprise}
             surpriseLoading={surpriseLoading}
@@ -1133,7 +1155,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
     <main className="min-h-screen overflow-x-hidden bg-paper lg:flex lg:items-start lg:overflow-visible">
       <DashboardSidebar
         active={activeView}
-        onSelect={setActiveView}
+        onSelect={selectView}
         showFootprint={showFootprint || footprintLoading}
       />
       <div className="min-w-0 flex-1 bg-paper">
@@ -1142,7 +1164,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
           title={activeLabel.title}
           subtitle={activeLabel.subtitle}
           messageCount={messageCount}
-          onExport={() => setActiveView("export")}
+          onExport={() => selectView("export")}
         />
         <div className="mx-auto w-full max-w-[1280px] space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
           {workerStalled ? (
