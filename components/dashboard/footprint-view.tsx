@@ -300,7 +300,7 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
             <ArchivePanel
               className="h-150"
               title="Followers & following"
-              subtitle="Unique Instagram handles from your followers and following files. Follow back = people you follow who do not follow you."
+              subtitle="Follow back = accounts you follow that do not follow you back."
               action={
                 <select
                   className="border border-ink/30 bg-cream px-2 py-1.5 font-display text-sm outline-none"
