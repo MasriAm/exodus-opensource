@@ -7,7 +7,11 @@ import { ArchivePanel } from "@/components/dashboard/archive-panel";
 import { StatePanel } from "@/components/state-panel";
 import { UserText } from "@/components/user-text";
 import { formatDate, formatNumber } from "@/lib/format";
-import { followingWithoutFollowBack, uniqueFollowEvents } from "@/lib/follow-facts";
+import {
+  followingWithoutFollowBack,
+  normalizeFollowUsername,
+  uniqueFollowEvents,
+} from "@/lib/follow-facts";
 import type { FootprintResult } from "@/lib/db/types";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +21,7 @@ type FootprintViewProps = {
   error: string | null;
 };
 
-type FollowFilter = "all" | "follower" | "following" | "not_back";
+type FollowFilter = "follower" | "following" | "not_back";
 
 const LIST_PAGE = 25;
 
@@ -64,7 +68,7 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
   const [year, setYear] = useState<number | null>(null);
   const [commentYear, setCommentYear] = useState<number | "all">("all");
   const [commentQuery, setCommentQuery] = useState("");
-  const [followKind, setFollowKind] = useState<FollowFilter>("all");
+  const [followKind, setFollowKind] = useState<FollowFilter>("follower");
   const [followQuery, setFollowQuery] = useState("");
   const [followLimit, setFollowLimit] = useState(LIST_PAGE);
   const [commentLimit, setCommentLimit] = useState(LIST_PAGE);
@@ -87,20 +91,6 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
     () => uniqueFollowEvents(data?.followEvents ?? [], "following"),
     [data],
   );
-  const uniqueAllFollows = useMemo(() => {
-    const seen = new Set<string>();
-    const rows = [...uniqueFollowers, ...uniqueFollowing];
-    const result: typeof rows = [];
-    for (const row of rows) {
-      const key = `${row.kind}:${row.username.trim().toLocaleLowerCase()}`;
-      if (seen.has(key)) {
-        continue;
-      }
-      seen.add(key);
-      result.push(row);
-    }
-    return result;
-  }, [uniqueFollowers, uniqueFollowing]);
 
   const visibleComments = useMemo(() => {
     if (!data) {
@@ -128,24 +118,21 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
     const base =
       followKind === "not_back"
         ? notFollowingBack
-        : followKind === "follower"
-          ? uniqueFollowers
-          : followKind === "following"
-            ? uniqueFollowing
-            : uniqueAllFollows;
-    const needle = followQuery.trim().toLocaleLowerCase();
+        : followKind === "following"
+          ? uniqueFollowing
+          : uniqueFollowers;
+    const needle = normalizeFollowUsername(followQuery);
     if (!needle) {
       return base;
     }
     return base.filter((row) =>
-      row.username.toLocaleLowerCase().includes(needle),
+      normalizeFollowUsername(row.username).includes(needle),
     );
   }, [
     data,
     followKind,
     followQuery,
     notFollowingBack,
-    uniqueAllFollows,
     uniqueFollowers,
     uniqueFollowing,
   ]);
@@ -313,7 +300,7 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
             <ArchivePanel
               className="h-150"
               title="Followers & following"
-              subtitle="Connections from Instagram's followers/following files. Filter to people you follow who don't follow you back."
+              subtitle="Unique Instagram handles from your followers and following files. Follow back = people you follow who do not follow you."
               action={
                 <select
                   className="border border-ink/30 bg-cream px-2 py-1.5 font-display text-sm outline-none"
@@ -323,13 +310,14 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
                     setFollowLimit(LIST_PAGE);
                   }}
                 >
-                  <option value="all">
-                    All ({formatNumber(data.followEvents.length)})
+                  <option value="follower">
+                    Followers ({formatNumber(uniqueFollowers.length)})
                   </option>
-                  <option value="follower">Followers</option>
-                  <option value="following">Following</option>
+                  <option value="following">
+                    Following ({formatNumber(uniqueFollowing.length)})
+                  </option>
                   <option value="not_back">
-                    Not following back ({formatNumber(notFollowingBack.length)})
+                    Follow back ({formatNumber(notFollowingBack.length)})
                   </option>
                 </select>
               }
@@ -370,12 +358,14 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
                           className="truncate font-display text-xs font-bold text-ink"
                           dir="auto"
                         >
-                          {row.username}
+                          @{normalizeFollowUsername(row.username) || row.username}
                         </p>
                         <p className="font-display text-[10px] uppercase tracking-[0.08em] text-ink/65">
                           {followKind === "not_back"
-                            ? "you follow · no follow back"
-                            : row.kind}
+                            ? "you follow · they don't"
+                            : followKind === "follower"
+                              ? "follower"
+                              : "following"}
                         </p>
                       </div>
                       <span className="shrink-0 font-display text-[11px] text-ink/70">

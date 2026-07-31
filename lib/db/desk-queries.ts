@@ -4,6 +4,7 @@ import {
   localUtcOffsetSeconds,
   localWallTimestampSql,
 } from "@/lib/calendar-day";
+import { canonicalFollowHandle } from "@/lib/follow-facts";
 import { computeStreakSilence } from "@/lib/streak-facts";
 import { ARABIC_STOPWORDS, ENGLISH_STOPWORDS } from "@/lib/text";
 
@@ -1134,30 +1135,34 @@ export async function footprint(
       `
         SELECT
           kind,
-          COALESCE(
-            nullif(trim(regexp_extract(replace(json_extract_string(payload, '$.href'), '/_u/', '/'), 'instagram\\.com/([^/?#]+)', 1)), ''),
-            nullif(trim(json_extract_string(payload, '$.value')), ''),
-            nullif(trim(json_extract_string(payload, '$.name')), '')
-          ) AS username,
+          json_extract_string(payload, '$.href') AS href,
+          json_extract_string(payload, '$.value') AS value,
+          json_extract_string(payload, '$.name') AS name,
           epoch(occurred_at) * 1000.0 AS occurred_at_ms
         FROM events
         WHERE ${evt.clause}
           AND kind IN ('follower', 'following')
-          AND COALESCE(
-            nullif(trim(regexp_extract(replace(json_extract_string(payload, '$.href'), '/_u/', '/'), 'instagram\\.com/([^/?#]+)', 1)), ''),
-            nullif(trim(json_extract_string(payload, '$.value')), ''),
-            nullif(trim(json_extract_string(payload, '$.name')), '')
-          ) IS NOT NULL
         ORDER BY occurred_at DESC
-        LIMIT 10000
       `,
       evt.params,
     )
-  ).map((row) => ({
-    kind: readString(row, "kind") as "follower" | "following",
-    username: readString(row, "username"),
-    occurredAtMs: readNumber(row, "occurred_at_ms"),
-  }));
+  ).flatMap((row) => {
+    const username = canonicalFollowHandle({
+      href: readNullableString(row, "href"),
+      value: readNullableString(row, "value"),
+      name: readNullableString(row, "name"),
+    });
+    if (!username) {
+      return [];
+    }
+    return [
+      {
+        kind: readString(row, "kind") as "follower" | "following",
+        username,
+        occurredAtMs: readNumber(row, "occurred_at_ms"),
+      },
+    ];
+  });
 
   const personalInfo: FootprintPersonalInfo[] = (
     await preparedRows(

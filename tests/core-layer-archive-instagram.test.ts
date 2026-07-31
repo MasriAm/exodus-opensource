@@ -232,8 +232,10 @@ describe("Instagram parser plugin", () => {
       const follower = events.find((row) => row.kind === "follower");
       expect(follower).toBeDefined();
       expect(JSON.parse(follower?.payload ?? "{}")).toMatchObject({
+        // Handle comes from the profile URL; Arabic title stays as display name.
         name: "سارة",
-        value: "سارة",
+        value: "example",
+        href: "https://www.instagram.com/example",
       });
       const personal = events.find((row) => row.kind === "personal_info");
       expect(personal?.payload).toContain("مريم");

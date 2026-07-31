@@ -26,6 +26,24 @@ export function normalizeFollowUsername(value: string): string {
   return raw.replace(/^@+/, "").trim().toLocaleLowerCase();
 }
 
+/**
+ * Stable Instagram handle for follow-graph matching.
+ * Profile URLs win over display names stored in `value` / `title`.
+ */
+export function canonicalFollowHandle(parts: {
+  href?: string | null;
+  value?: string | null;
+  name?: string | null;
+}): string {
+  for (const candidate of [parts.href, parts.value, parts.name]) {
+    const key = normalizeFollowUsername(candidate ?? "");
+    if (key) {
+      return key;
+    }
+  }
+  return "";
+}
+
 function usernameKey(value: string): string {
   return normalizeFollowUsername(value);
 }

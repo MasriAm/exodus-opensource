@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canonicalFollowHandle,
   followingWithoutFollowBack,
   normalizeFollowUsername,
 } from "@/lib/follow-facts";
@@ -10,6 +11,18 @@ describe("normalizeFollowUsername", () => {
     expect(normalizeFollowUsername("@Sara_Al")).toBe("sara_al");
     expect(
       normalizeFollowUsername("https://www.instagram.com/_u/sara_al/"),
+    ).toBe("sara_al");
+  });
+});
+
+describe("canonicalFollowHandle", () => {
+  it("prefers the profile URL handle over a display-name value", () => {
+    expect(
+      canonicalFollowHandle({
+        href: "https://www.instagram.com/sara_al/",
+        value: "سارة",
+        name: "سارة",
+      }),
     ).toBe("sara_al");
   });
 });
@@ -47,5 +60,37 @@ describe("followingWithoutFollowBack", () => {
     expect(rows.map((row) => normalizeFollowUsername(row.username))).toEqual([
       "only_out",
     ]);
+  });
+
+  it("treats display-name vs URL-handle pairs as the same person via canonical keys", () => {
+    const followerHandle = canonicalFollowHandle({
+      href: "https://www.instagram.com/mutual_pal/",
+      value: "Mutual Pal",
+      name: "Mutual Pal",
+    });
+    const followingHandle = canonicalFollowHandle({
+      href: null,
+      value: "mutual_pal",
+      name: "Mutual Pal",
+    });
+    expect(followerHandle).toBe(followingHandle);
+    const rows = followingWithoutFollowBack([
+      {
+        kind: "follower",
+        username: followerHandle,
+        occurredAtMs: 1,
+      },
+      {
+        kind: "following",
+        username: followingHandle,
+        occurredAtMs: 2,
+      },
+      {
+        kind: "following",
+        username: "only_out",
+        occurredAtMs: 3,
+      },
+    ]);
+    expect(rows.map((row) => row.username)).toEqual(["only_out"]);
   });
 });

@@ -509,13 +509,32 @@ function connectionUsername(
   const fromHref = datum.href
     ? datum.href.match(/instagram\.com\/(?:_u\/)?([^/?#]+)/i)?.[1]
     : undefined;
-  for (const candidate of [datum.value, title, fromHref]) {
+  // Profile URL handle is stable; export "value"/"title" are often display names.
+  for (const candidate of [fromHref, datum.value, title]) {
     const trimmed = candidate?.trim();
     if (trimmed) {
-      return fixMojibake(trimmed.replace(/^@+/, ""));
+      try {
+        return fixMojibake(decodeURIComponent(trimmed).replace(/^@+/, ""));
+      } catch {
+        return fixMojibake(trimmed.replace(/^@+/, ""));
+      }
     }
   }
   return null;
+}
+
+function connectionDisplayName(
+  datum: { href?: string; value?: string },
+  title: string | undefined,
+  handle: string,
+): string {
+  for (const candidate of [title, datum.value]) {
+    const trimmed = candidate?.trim();
+    if (trimmed) {
+      return fixMojibake(trimmed);
+    }
+  }
+  return handle;
 }
 
 async function parseConnections(
@@ -546,7 +565,11 @@ async function parseConnections(
             payload: stringifyJson(
               {
                 href: datum.href ?? null,
-                name: connection.title ?? username,
+                name: connectionDisplayName(
+                  datum,
+                  connection.title,
+                  username,
+                ),
                 value: username,
               },
               entry.path,

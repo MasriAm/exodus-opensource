@@ -168,6 +168,27 @@ const events: NormalizedRow[] = [
   {
     table: "events",
     platform: "instagram",
+    kind: "follower",
+    occurred_at_ms: localMs(2023, 1, 5),
+    payload: JSON.stringify({
+      href: "https://www.instagram.com/href_mutual/",
+      value: "Href Mutual Display",
+      name: "Href Mutual Display",
+    }),
+  },
+  {
+    table: "events",
+    platform: "instagram",
+    kind: "following",
+    occurred_at_ms: localMs(2023, 1, 6),
+    payload: JSON.stringify({
+      value: "href_mutual",
+      name: "Href Mutual Display",
+    }),
+  },
+  {
+    table: "events",
+    platform: "instagram",
     kind: "comment",
     occurred_at_ms: localMs(2022, 3, 3),
     payload: JSON.stringify({ text: "old comment", title: "a post" }),
@@ -429,8 +450,37 @@ describe("named query results", () => {
     const following = result.followEvents.filter(
       (row) => row.kind === "following",
     );
-    expect(followers).toHaveLength(2);
-    expect(following).toHaveLength(2);
+    expect(followers).toHaveLength(3);
+    expect(following).toHaveLength(3);
+    expect(followers.map((row) => row.username).sort()).toEqual([
+      "href_mutual",
+      "mutual_one",
+      "mutual_one",
+    ]);
+    expect(following.map((row) => row.username).sort()).toEqual([
+      "href_mutual",
+      "mutual_one",
+      "never_back",
+    ]);
+  });
+
+  it("matches follow-back using profile URL handles over display names", async () => {
+    const { followingWithoutFollowBack, uniqueFollowEvents } = await import(
+      "@/lib/follow-facts"
+    );
+    const result = await executeNamedQuery(db, "footprint", undefined);
+    const notBack = followingWithoutFollowBack(result.followEvents);
+    expect(uniqueFollowEvents(result.followEvents, "follower").map((r) => r.username).sort()).toEqual([
+      "href_mutual",
+      "mutual_one",
+    ]);
+    expect(uniqueFollowEvents(result.followEvents, "following").map((r) => r.username).sort()).toEqual([
+      "href_mutual",
+      "mutual_one",
+      "never_back",
+    ]);
+    // href_mutual matches across display-name vs handle; only never_back remains.
+    expect(notBack.map((row) => row.username)).toEqual(["never_back"]);
   });
 
   it("shows readable personal information instead of raw JSON", async () => {
