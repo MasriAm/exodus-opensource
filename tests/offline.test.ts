@@ -30,5 +30,8 @@ describe("offline application shell", () => {
     expect(serviceWorker).toContain(
       "requestUrl.origin !== self.location.origin",
     );
+    // Soft nav must bypass the SW; cached HTML for RSC kills the archive session.
+    expect(serviceWorker).toContain("isAppRouterFlight");
+    expect(serviceWorker).toContain('headers.get("RSC")');
   });
 });

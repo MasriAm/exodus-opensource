@@ -20,6 +20,48 @@ const APP_SHELL = [
   /* PRECACHE_END */
 ];
 
+function isAppRouterFlight(request, requestUrl) {
+  if (requestUrl.searchParams.has("_rsc")) {
+    return true;
+  }
+  if (requestUrl.pathname.endsWith(".txt")) {
+    return true;
+  }
+  const headers = request.headers;
+  return (
+    headers.get("RSC") === "1" ||
+    headers.get("Next-Router-State-Tree") != null ||
+    headers.get("Next-Router-Prefetch") != null ||
+    headers.get("Next-Url") != null
+  );
+}
+
+function networkFirst(request, cached) {
+  return fetch(request)
+    .then((response) => {
+      if (response.ok && request.method === "GET") {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+      }
+      return response;
+    })
+    .catch(
+      () =>
+        cached ??
+        new Response("Exodus is offline and this asset is not cached.", {
+          status: 503,
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        }),
+    );
+}
+
+function cacheFirst(request, cached) {
+  if (cached) {
+    return cached;
+  }
+  return networkFirst(request, null);
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) =>
@@ -53,35 +95,24 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Demo ZIPs and DuckDB binaries: prefer network so a stale/empty cache cannot
-  // break "Try synthetic export" or DB boot after a rebuild.
-  const networkFirst =
+  // Never intercept App Router flight/RSC. Cache-first HTML for these
+  // requests makes Next fall back to a full document load, which kills the
+  // in-memory DuckDB session right after ingest.
+  if (isAppRouterFlight(event.request, requestUrl)) {
+    return;
+  }
+
+  const networkPreferred =
+    event.request.mode === "navigate" ||
     requestUrl.pathname.endsWith(".zip") ||
     requestUrl.pathname.includes("/duckdb/");
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      const network = fetch(event.request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          }
-          return response;
-        })
-        .catch(
-          () =>
-            cached ??
-            new Response("Exodus is offline and this asset is not cached.", {
-              status: 503,
-              headers: { "Content-Type": "text/plain; charset=utf-8" },
-            }),
-        );
-
-      if (networkFirst) {
-        return network;
+      if (networkPreferred) {
+        return networkFirst(event.request, cached);
       }
-      return cached ?? network;
+      return cacheFirst(event.request, cached);
     }),
   );
 });

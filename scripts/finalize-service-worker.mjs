@@ -42,7 +42,8 @@ function routeUrls(relativePath) {
 
 const files = (await outputFiles(outputDirectory)).filter((filePath) => {
   const path = browserPath(filePath);
-  return path !== "sw.js" && path !== "_headers";
+  // Skip flight/RSC payloads (*.txt) — caching them breaks soft navigation.
+  return path !== "sw.js" && path !== "_headers" && !path.endsWith(".txt");
 });
 const descriptors = await Promise.all(
   files.map(async (filePath) => ({
