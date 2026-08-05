@@ -575,7 +575,8 @@ export async function personDetail(
           CAST(COUNT(*) AS DOUBLE) AS message_count,
           CAST(COUNT(DISTINCT sender) AS DOUBLE) AS participant_count,
           epoch(MIN(sent_at)) * 1000.0 AS first_message_at_ms,
-          epoch(MAX(sent_at)) * 1000.0 AS last_message_at_ms
+          epoch(MAX(sent_at)) * 1000.0 AS last_message_at_ms,
+          CAST(SUM(CASE WHEN hour(sent_at) < 4 THEN 1 ELSE 0 END) AS DOUBLE) AS late_message_count
         FROM messages
         WHERE ${msg.clause}
       `,
@@ -600,6 +601,7 @@ export async function personDetail(
       longestSilenceDays: 0,
       media: [],
       dynamics: emptyDynamics(),
+      lateMessageCount: 0,
     };
   }
 
@@ -956,6 +958,7 @@ export async function personDetail(
     longestSilenceDays,
     media,
     dynamics,
+    lateMessageCount: readNumber(summary, "late_message_count"),
   };
 }
 

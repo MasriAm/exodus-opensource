@@ -313,6 +313,7 @@ export interface PersonDetailResult {
   longestSilenceDays: number;
   media: MediaItem[];
   dynamics: PersonDynamics;
+  lateMessageCount: number;
 }
 
 export interface MessageHeatmapParams {

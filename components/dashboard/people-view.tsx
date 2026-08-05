@@ -2,6 +2,15 @@
 
 import { useMemo, useState } from "react";
 
+import {
+  Radar,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  ResponsiveContainer,
+} from "recharts";
+
 import { PhotoThumb } from "@/components/capsule/photo-thumb";
 import { ArchivePanel, StatCard } from "@/components/dashboard/archive-panel";
 import { StatePanel } from "@/components/state-panel";
@@ -15,6 +24,7 @@ type PeopleViewProps = {
   loading: boolean;
   error: string | null;
   selected: string | null;
+  archiveOwnerName?: string | null;
   detail: PersonDetailResult | null;
   detailLoading: boolean;
   hasMore?: boolean;
@@ -46,9 +56,11 @@ function formatReplyLatency(ms: number | null): string {
 function VolumeBar({
   conversation,
   balance,
+  archiveOwnerName,
 }: {
   conversation: string;
   balance: Array<{ sender: string; messageCount: number }>;
+  archiveOwnerName?: string | null;
 }) {
   if (balance.length === 0) {
     return null;
@@ -58,15 +70,42 @@ function VolumeBar({
     return null;
   }
   const normalized = conversation.trim().toLocaleLowerCase();
-  const them =
-    balance.find((row) => {
+  const normalizedOwner = archiveOwnerName?.trim().toLocaleLowerCase();
+
+  const isOneOnOne = balance.some((row) => {
+    const s = row.sender.trim().toLocaleLowerCase();
+    return s === normalized || normalized.includes(s) || s.includes(normalized);
+  });
+
+  let youCount = 0;
+  let themCount = 0;
+  let textNode = null;
+
+  if (isOneOnOne) {
+    const them = balance.find((row) => {
       const s = row.sender.trim().toLocaleLowerCase();
       return s === normalized || normalized.includes(s) || s.includes(normalized);
-    }) ?? [...balance].sort((a, b) => b.messageCount - a.messageCount)[0];
-  const youCount = balance
-    .filter((row) => row.sender !== them.sender)
-    .reduce((sum, row) => sum + row.messageCount, 0);
-  const themCount = them.messageCount;
+    })!;
+    themCount = them.messageCount;
+    youCount = total - themCount;
+    textNode = <><UserText as="span">{them.sender}</UserText> vs everyone else in the thread.</>;
+  } else {
+    const you = normalizedOwner 
+      ? balance.find((row) => row.sender.trim().toLocaleLowerCase() === normalizedOwner || row.sender.trim().toLocaleLowerCase().includes(normalizedOwner))
+      : null;
+      
+    if (you) {
+      youCount = you.messageCount;
+      themCount = total - youCount;
+      textNode = <>You vs everyone else in the thread.</>;
+    } else {
+      const topSender = [...balance].sort((a, b) => b.messageCount - a.messageCount)[0];
+      themCount = topSender.messageCount;
+      youCount = total - themCount;
+      textNode = <><UserText as="span">{topSender.sender}</UserText> vs everyone else in the thread.</>;
+    }
+  }
+
   const youPct = Math.round((youCount / total) * 100);
   const themPct = Math.max(0, 100 - youPct);
 
@@ -87,7 +126,7 @@ function VolumeBar({
         </div>
       </div>
       <p className="mt-2 font-body text-[13px] text-ink/75">
-        <UserText as="span">{them.sender}</UserText> vs everyone else in the thread.
+        {textNode}
       </p>
     </div>
   );
@@ -165,7 +204,118 @@ function SplitMeter({
   );
 }
 
-function DynamicsPanel({ detail }: { detail: PersonDetailResult }) {
+function RelationshipRadarCard({ detail, archiveOwnerName }: { detail: PersonDetailResult, archiveOwnerName?: string | null }) {
+  if (detail.messageCount === 0) return null;
+
+  const EPSILON = 0.0001;
+  const safeValue = (val: number | null | undefined) => Math.max(val ?? 0, EPSILON);
+  const safeDivide = (numerator: number | null | undefined, denominator: number | null | undefined) => {
+    return safeValue(numerator) / safeValue(denominator);
+  };
+  const safeLog = (val: number | null | undefined) => {
+    return Math.log(safeValue(val));
+  };
+
+  const balance = detail.senderBalance;
+  const normalized = detail.conversation.trim().toLocaleLowerCase();
+  const normalizedOwner = archiveOwnerName?.trim().toLocaleLowerCase();
+
+  const isOneOnOne = balance.some((row) => {
+    const s = row.sender.trim().toLocaleLowerCase();
+    return s === normalized || normalized.includes(s) || s.includes(normalized);
+  });
+
+  let youCount = 0;
+  let themCount = 0;
+
+  if (isOneOnOne) {
+    const them = balance.find((row) => {
+      const s = row.sender.trim().toLocaleLowerCase();
+      return s === normalized || normalized.includes(s) || s.includes(normalized);
+    })!;
+    themCount = them.messageCount;
+    youCount = detail.messageCount - themCount;
+  } else {
+    const you = normalizedOwner 
+      ? balance.find((row) => row.sender.trim().toLocaleLowerCase() === normalizedOwner || row.sender.trim().toLocaleLowerCase().includes(normalizedOwner))
+      : null;
+      
+    if (you) {
+      youCount = you.messageCount;
+      themCount = detail.messageCount - youCount;
+    } else {
+      const topSender = [...balance].sort((a, b) => b.messageCount - a.messageCount)[0];
+      themCount = topSender.messageCount;
+      youCount = detail.messageCount - themCount;
+    }
+  }
+
+  // Estimated words based on 5 characters per word to ensure high performance
+  const wordsYou = (detail.dynamics.avgMessageLength.you * youCount) / 5.0;
+  const wordsThem = (detail.dynamics.avgMessageLength.them * themCount) / 5.0;
+  const totalWords = wordsYou + wordsThem;
+
+  const V = safeLog(totalWords);
+  const B = 1 - Math.abs((wordsYou - wordsThem) / safeValue(totalWords));
+  
+  // Smoothing of 60 seconds (60,000ms) added to response times
+  const R = safeLog(safeDivide(
+    (detail.dynamics.medianReplyMs.them ?? 0) + 60000, 
+    (detail.dynamics.medianReplyMs.you ?? 0) + 60000
+  ));
+  
+  const C = safeDivide(detail.longestStreakDays, detail.longestSilenceDays);
+  
+  const I = safeLog(
+    safeDivide(
+      wordsThem + detail.dynamics.mediaSplit.them * 10,
+      wordsYou + detail.dynamics.mediaSplit.you * 10
+    )
+  );
+  
+  const L = safeDivide(detail.lateMessageCount, detail.messageCount);
+
+  const S_bestfriend = 0.5 * V + 2 * B + 0.8 * C - 1.5 * Math.abs(R) - 1.5 * Math.abs(I) + 2.5 * L - 4.5;
+  const S_acquaintance = -0.6 * V + 1.5 * B - C - Math.abs(R) - 3 * L + 4;
+  const S_obsessed_you = 0.3 * V - 2.5 * B + 1.8 * R - 1.8 * I + 2 * L - 1;
+  const S_obsessed_them = 0.3 * V - 2.5 * B - 1.8 * R + 1.8 * I - 1;
+
+  const sigmoid = (s: number) => (1 / (1 + Math.exp(-s))) * 100;
+
+  const data = [
+    { subject: "Best Friends", A: Math.round(sigmoid(S_bestfriend)) },
+    { subject: "Acquaintances", A: Math.round(sigmoid(S_acquaintance)) },
+    { subject: "Obsessed (You)", A: Math.round(sigmoid(S_obsessed_you)) },
+    { subject: "Obsessed (Them)", A: Math.round(sigmoid(S_obsessed_them)) },
+  ];
+
+  return (
+    <div className="mt-5 border border-ink/20 bg-paper/40 p-4">
+      <h3 className="meta-caps mb-2 text-ink/70">Relationship Signature</h3>
+      <div className="h-64 w-full sm:h-72">
+        <ResponsiveContainer width="100%" height="100%">
+          <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data}>
+            <PolarGrid stroke="#0a0a0a" strokeOpacity={0.1} />
+            <PolarAngleAxis 
+              dataKey="subject" 
+              tick={{ fill: "#0a0a0a", fontSize: 11, fontFamily: "var(--font-display)", fontWeight: "bold" }} 
+            />
+            <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+            <Radar
+              name="Relationship"
+              dataKey="A"
+              stroke="var(--teal)"
+              fill="var(--teal)"
+              fillOpacity={0.6}
+            />
+          </RadarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function DynamicsPanel({ detail, archiveOwnerName }: { detail: PersonDetailResult, archiveOwnerName?: string | null }) {
   const d = detail.dynamics;
   const startTotal = d.conversationStarts.you + d.conversationStarts.them;
   const mediaTotal = d.mediaSplit.you + d.mediaSplit.them;
@@ -180,7 +330,10 @@ function DynamicsPanel({ detail }: { detail: PersonDetailResult }) {
       <VolumeBar
         conversation={detail.conversation}
         balance={detail.senderBalance}
+        archiveOwnerName={archiveOwnerName}
       />
+
+      <RelationshipRadarCard detail={detail} archiveOwnerName={archiveOwnerName} />
 
       <dl className="mt-5 grid gap-3 sm:grid-cols-2">
         <div className="border border-ink/20 bg-paper/40 px-3 py-2.5">
@@ -270,6 +423,7 @@ export function PeopleView({
   loading,
   error,
   selected,
+  archiveOwnerName,
   detail,
   detailLoading,
   hasMore = false,
@@ -444,7 +598,7 @@ export function PeopleView({
               </div>
 
               <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-                <DynamicsPanel detail={detail} />
+                <DynamicsPanel detail={detail} archiveOwnerName={archiveOwnerName} />
                 <ArchivePanel
                   title="Shared media"
                   subtitle={pluralize(detail.media.length, "photo", "photos")}

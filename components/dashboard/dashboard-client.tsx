@@ -1000,6 +1000,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
             loading={peopleLoading}
             error={peopleError}
             selected={selectedPerson}
+            archiveOwnerName={selectedPerson ? (options?.owners?.[selectedPerson] ?? options?.globalArchiveOwnerName ?? null) : null}
             detail={personDetail}
             detailLoading={personLoading}
             hasMore={peopleHasMore}
