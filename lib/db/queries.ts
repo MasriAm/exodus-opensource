@@ -1,5 +1,9 @@
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
+import {
+  localUtcOffsetSeconds,
+  localWallTimestampSql,
+} from "../calendar-day";
 import { ARABIC_STOPWORDS, ENGLISH_STOPWORDS } from "../text";
 import { messagesWhere, mediaWhere, mergeFilters } from "./archive-filter";
 import {
@@ -266,6 +270,7 @@ const WRAPPED_TOP_CONTACTS_SQL = `
   LIMIT 5
 `;
 
+/** Hour-of-day in the reader's local wall clock (offset bound as `?`). */
 const WRAPPED_HOURS_SQL = `
   WITH hours AS (
     SELECT hour
@@ -273,10 +278,11 @@ const WRAPPED_HOURS_SQL = `
   ),
   message_counts AS (
     SELECT
-      CAST(EXTRACT(hour FROM sent_at) AS INTEGER) AS hour,
+      CAST(EXTRACT(hour FROM ${localWallTimestampSql("sent_at")}) AS INTEGER)
+        AS hour,
       COUNT(*) AS message_count
     FROM messages
-    GROUP BY EXTRACT(hour FROM sent_at)
+    GROUP BY 1
   )
   SELECT
     CAST(hours.hour AS DOUBLE) AS hour,
@@ -373,19 +379,25 @@ const WRAPPED_LONGEST_STREAK_SQL = `
   LIMIT 1
 `;
 
+/** Prefer payload.value, then name — Instagram following.json often omits value. */
+const FOLLOW_USERNAME_SQL = `lower(trim(COALESCE(
+  nullif(trim(json_extract_string(payload, '$.value')), ''),
+  nullif(trim(json_extract_string(payload, '$.name')), '')
+)))`;
+
 const WRAPPED_MUTUAL_FOLLOWS_SQL = `
   SELECT
-    lower(trim(json_extract_string(follower.payload, '$.value'))) AS username,
+    ${FOLLOW_USERNAME_SQL.replaceAll("payload", "follower.payload")} AS username,
     epoch(greatest(follower.occurred_at, following.occurred_at)) * 1000.0
       AS started_at_ms
   FROM events AS follower
   INNER JOIN events AS following
-    ON lower(trim(json_extract_string(follower.payload, '$.value')))
-     = lower(trim(json_extract_string(following.payload, '$.value')))
+    ON ${FOLLOW_USERNAME_SQL.replaceAll("payload", "follower.payload")}
+     = ${FOLLOW_USERNAME_SQL.replaceAll("payload", "following.payload")}
   WHERE follower.kind = 'follower'
     AND following.kind = 'following'
-    AND json_extract_string(follower.payload, '$.value') IS NOT NULL
-    AND trim(json_extract_string(follower.payload, '$.value')) <> ''
+    AND ${FOLLOW_USERNAME_SQL.replaceAll("payload", "follower.payload")} IS NOT NULL
+    AND ${FOLLOW_USERNAME_SQL.replaceAll("payload", "follower.payload")} <> ''
   ORDER BY
     greatest(follower.occurred_at, following.occurred_at) ASC,
     username ASC
@@ -416,9 +428,7 @@ const WRAPPED_CRINGE_COMMENTS_SQL = `
   WHERE kind = 'comment'
     AND json_extract_string(payload, '$.text') IS NOT NULL
     AND trim(json_extract_string(payload, '$.text')) <> ''
-  ORDER BY 
-    CASE WHEN occurred_at <= current_date - INTERVAL 3 YEAR THEN 0 ELSE 1 END ASC,
-    random()
+  ORDER BY occurred_at ASC
   LIMIT 12
 `;
 
@@ -448,19 +458,21 @@ const WRAPPED_PROFILE_HISTORY_SQL = `
 
 const WRAPPED_FIRST_IMAGE_SQL = `
   SELECT
-    zip_path,
-    conversation,
+    media.zip_path,
+    media.conversation,
     CASE
-      WHEN taken_at IS NULL THEN NULL
-      ELSE epoch(taken_at) * 1000.0
+      WHEN media.taken_at IS NULL THEN NULL
+      ELSE epoch(media.taken_at) * 1000.0
     END AS taken_at_ms
   FROM media
-  WHERE kind = 'image'
-    AND conversation IS NOT NULL
-    AND zip_path IS NOT NULL
-    AND zip_path NOT LIKE 'omitted://%'
-    AND taken_at <= current_date - INTERVAL 3 YEAR
-  ORDER BY random()
+  LEFT JOIN messages
+    ON messages.media_ref = media.zip_path
+  WHERE media.kind = 'image'
+    AND media.zip_path IS NOT NULL
+    AND media.zip_path NOT LIKE 'omitted://%'
+  ORDER BY
+    COALESCE(messages.sent_at, media.taken_at) DESC NULLS LAST,
+    media.rowid DESC
   LIMIT 8
 `;
 
@@ -736,6 +748,38 @@ export async function messagesPage(
   );
   const totalCount = readNumber(countRow, "total");
 
+  const senderRows = await preparedRows(
+    connection,
+    `
+      SELECT
+        sender,
+        CAST(COUNT(*) AS DOUBLE) AS message_count
+      FROM messages
+      WHERE ${filter.clause}
+      GROUP BY sender
+      ORDER BY COUNT(*) DESC, sender ASC
+    `,
+    filter.params,
+  );
+  const threadSenders = senderRows.map((row) => ({
+    sender: readString(row, "sender"),
+    messageCount: readNumber(row, "message_count"),
+  }));
+
+  const selfHintRows = await preparedRows(
+    connection,
+    `
+      SELECT sender
+      FROM messages
+      GROUP BY sender
+      ORDER BY COUNT(DISTINCT conversation) DESC, COUNT(*) DESC, sender ASC
+      LIMIT 1
+    `,
+    [],
+  );
+  const archiveSelfHint =
+    selfHintRows.length > 0 ? readString(selfHintRows[0], "sender") : null;
+
   // Offset mode: chronological pages for the Archive Terminal pager.
   if (params.offset !== undefined && params.offset !== null) {
     const rows = await preparedRows(
@@ -763,6 +807,8 @@ export async function messagesPage(
       totalCount,
       offset,
       limit,
+      threadSenders,
+      archiveSelfHint,
     };
   }
 
@@ -809,6 +855,8 @@ export async function messagesPage(
     totalCount,
     offset: 0,
     limit,
+    threadSenders,
+    archiveSelfHint,
   };
 }
 
@@ -1032,7 +1080,9 @@ export async function wrappedStats(
     "Wrapped overview",
   );
   const contactRows = await queryRows(connection, WRAPPED_TOP_CONTACTS_SQL);
-  const hourRows = await queryRows(connection, WRAPPED_HOURS_SQL);
+  const hourRows = await preparedRows(connection, WRAPPED_HOURS_SQL, [
+    localUtcOffsetSeconds(),
+  ]);
   const busiestRows = await queryRows(connection, WRAPPED_BUSIEST_DAY_SQL);
   const wordRows = await preparedRows(
     connection,
@@ -1089,9 +1139,8 @@ export async function wrappedStats(
     topContacts,
     messagesByHour,
     peakHour: peak && peak.messageCount > 0 ? peak.hour : null,
-    threeAmEraMessages: messagesByHour
-      .filter(({ hour }) => hour >= 2 && hour < 4)
-      .reduce((sum, { messageCount }) => sum + messageCount, 0),
+    /** Peak-hour message count (legacy field name kept for the deck/API). */
+    threeAmEraMessages: peak && peak.messageCount > 0 ? peak.messageCount : 0,
     busiestDay:
       busiestRows.length === 0 ? null : wrappedBusiestDay(busiestRows[0]),
     topWords,

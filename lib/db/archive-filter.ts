@@ -29,14 +29,17 @@ function optionalBound(value: number | null | undefined): number | null {
   return value;
 }
 
-export function normalizeArchiveFilter(
-  raw?: ArchiveFilter | null,
-): Required<{
+export type NormalizedArchiveFilter = {
   fromMs: number | null;
   toMs: number | null;
   platform: string | null;
   conversation: string | null;
-}> {
+  unifiedAliases: { platform: string; conversation: string }[] | null;
+};
+
+export function normalizeArchiveFilter(
+  raw?: ArchiveFilter | null,
+): NormalizedArchiveFilter {
   const fromMs = optionalBound(raw?.fromMs ?? null);
   const toMs = optionalBound(raw?.toMs ?? null);
   if (fromMs !== null && toMs !== null && fromMs > toMs) {
@@ -50,7 +53,10 @@ export function normalizeArchiveFilter(
     typeof raw?.conversation === "string" && raw.conversation.trim().length > 0
       ? raw.conversation.trim()
       : null;
-  const unifiedAliases = raw?.unifiedAliases && raw.unifiedAliases.length > 0 ? raw.unifiedAliases : null;
+  const unifiedAliases =
+    raw?.unifiedAliases && raw.unifiedAliases.length > 0
+      ? raw.unifiedAliases
+      : null;
   return { fromMs, toMs, platform, conversation, unifiedAliases };
 }
 

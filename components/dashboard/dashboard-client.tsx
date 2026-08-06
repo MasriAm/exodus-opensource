@@ -36,6 +36,11 @@ import type {
 } from "@/lib/db/types";
 import { friendlyError } from "@/lib/errors";
 import { isQueryTimeoutError } from "@/lib/query-timeout";
+import {
+  deskSectionHref,
+  pushSessionUrl,
+  readDeskSectionFromLocation,
+} from "./session-history";
 
 function SectionLoading({ title }: { title: string }) {
   return (
@@ -218,7 +223,22 @@ export function DashboardClient({ api }: DashboardClientProps) {
     removeIdentity,
   } = useUnifiedIdentities();
   const { reloadSession } = useArchiveSession();
-  const [activeView, setActiveView] = useState<DeskSection>("desk");
+  const [activeView, setActiveView] = useState<DeskSection>(() =>
+    readDeskSectionFromLocation(),
+  );
+
+  const selectView = useCallback((view: DeskSection) => {
+    setActiveView(view);
+    pushSessionUrl(deskSectionHref(view), { exodusView: view });
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setActiveView(readDeskSectionFromLocation());
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
   const [deskRetryToken, setDeskRetryToken] = useState(0);
   const [filter, setFilter] = useState<ArchiveFilter>({});
   const [year, setYear] = useState<number | null>(null);
@@ -245,6 +265,10 @@ export function DashboardClient({ api }: DashboardClientProps) {
     null,
   );
   const [messages, setMessages] = useState<MessageViewItem[]>([]);
+  const [threadSenders, setThreadSenders] = useState<
+    Array<{ sender: string; messageCount: number }>
+  >([]);
+  const [archiveSelfHint, setArchiveSelfHint] = useState<string | null>(null);
   const [messagesPage, setMessagesPage] = useState(1);
   const [messagesTotalPages, setMessagesTotalPages] = useState(1);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -291,7 +315,6 @@ export function DashboardClient({ api }: DashboardClientProps) {
           unifiedAliases: identity.aliases,
         };
       } else {
-        // The unified identity was deleted; fall back to "Everyone".
         resolvedFilter = {
           ...filter,
           conversation: null,
@@ -315,13 +338,30 @@ export function DashboardClient({ api }: DashboardClientProps) {
     [options],
   );
 
-  // If a unified identity is deleted while it is the active filter, fallback to Everyone.
+  // Snapshot the year when opening the calendar; restore it when leaving.
+  const yearBeforeCalendarRef = useRef<number | null>(null);
+  const leftCalendarRef = useRef(false);
+  useEffect(() => {
+    if (activeView === "activity") {
+      if (!leftCalendarRef.current) {
+        yearBeforeCalendarRef.current = year;
+        leftCalendarRef.current = true;
+      }
+      return;
+    }
+    if (leftCalendarRef.current) {
+      leftCalendarRef.current = false;
+      setYear(yearBeforeCalendarRef.current);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot year on enter only
+  }, [activeView]);
+
   useEffect(() => {
     if (filter.conversation?.startsWith("unified:")) {
       const identityId = filter.conversation.slice(8);
-      const exists = unifiedIdentities.some(id => id.id === identityId);
+      const exists = unifiedIdentities.some((id) => id.id === identityId);
       if (!exists) {
-        setFilter(current => ({ ...current, conversation: null }));
+        setFilter((current) => ({ ...current, conversation: null }));
       }
     }
   }, [filter.conversation, unifiedIdentities, setFilter]);
@@ -595,6 +635,12 @@ export function DashboardClient({ api }: DashboardClientProps) {
   }, [effectiveFilter]);
 
   useEffect(() => {
+    // Person filter + "Other" often yields an empty page and hid the type tabs.
+    setMediaKind("image");
+    setMediaPage(1);
+  }, [filter.conversation]);
+
+  useEffect(() => {
     if (activeView !== "messages" || selectedConversation === null) {
       return;
     }
@@ -619,6 +665,8 @@ export function DashboardClient({ api }: DashboardClientProps) {
           return;
         }
         setMessages(result.items.map(mapMessage));
+        setThreadSenders(result.threadSenders);
+        setArchiveSelfHint(result.archiveSelfHint);
         setMessagesTotalPages(
           Math.max(1, Math.ceil(result.totalCount / MESSAGES_PAGE_SIZE)),
         );
@@ -700,7 +748,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
       setYear(years[years.length - 1] ?? null);
       return;
     }
-    const targetYear = year ?? new Date().getUTCFullYear();
+    const targetYear = year ?? new Date().getFullYear();
     let active = true;
     setHeatmapLoading(true);
     setHeatmapError(null);
@@ -735,7 +783,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
     return () => {
       active = false;
     };
-  }, [activeView, api, filter.conversation, filter.platform, year, years]);
+  }, [activeView, api, effectiveFilter, year, years]);
 
   const search = useCallback(
     (term: string) => {
@@ -744,8 +792,15 @@ export function DashboardClient({ api }: DashboardClientProps) {
       setSearchLoading(true);
       setSearchError(null);
       setHasSearched(true);
+      // Search ignores the sticky person filter from Media/People so hits aren't empty.
+      const searchFilter = {
+        fromMs: effectiveFilter.fromMs,
+        toMs: effectiveFilter.toMs,
+        platform: effectiveFilter.platform,
+        conversation: null as string | null,
+      };
       void api
-        .query("search", { term, limit: 200, offset: 0, filter: effectiveFilter })
+        .query("search", { term, limit: 200, offset: 0, filter: searchFilter })
         .then((result) => {
           if (searchSeqRef.current !== seq) {
             return;
@@ -771,7 +826,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
           setSearchLoading(false);
         });
     },
-    [api, effectiveFilter],
+    [api, effectiveFilter.fromMs, effectiveFilter.toMs, effectiveFilter.platform],
   );
 
   const readMediaBlob = useCallback(
@@ -804,10 +859,13 @@ export function DashboardClient({ api }: DashboardClientProps) {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [api]);
 
-  const openPerson = useCallback((conversation: string) => {
-    setSelectedPerson(conversation);
-    setActiveView("people");
-  }, []);
+  const openPerson = useCallback(
+    (conversation: string) => {
+      setSelectedPerson(conversation);
+      selectView("people");
+    },
+    [selectView],
+  );
 
   const openMessages = useCallback(
     (
@@ -815,10 +873,9 @@ export function DashboardClient({ api }: DashboardClientProps) {
       targetMessage?: { rowId: number; sentAtMs: number },
     ) => {
       setSelectedConversation(conversation);
-      setActiveView("messages");
-      
+      selectView("messages");
+
       if (targetMessage) {
-        // Fetch the chronological rank of the message to jump to its page
         void api
           .query("messageRank", {
             rowId: targetMessage.rowId,
@@ -834,7 +891,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
         setMessagesPage(1);
       }
     },
-    [api, effectiveFilter],
+    [api, effectiveFilter, selectView],
   );
 
   const onSurprise = useCallback(() => {
@@ -898,14 +955,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
           noun: "message",
         };
     }
-  }, [
-    activeView,
-    conversations,
-    heatmap,
-    mediaTotalCount,
-    messageCount,
-    people.length,
-  ]);
+  }, [activeView, heatmap, mediaTotalCount, messageCount, people.length]);
 
   const activeContent = (() => {
     switch (activeView) {
@@ -976,17 +1026,17 @@ export function DashboardClient({ api }: DashboardClientProps) {
           <DeskHome
             data={desk}
             readBlob={readMediaBlob}
-            onOpenPeople={() => setActiveView("people")}
+            onOpenPeople={() => selectView("people")}
             onOpenSearch={(query) => {
               if (query) {
                 setSearchSeed(query);
               }
-              setActiveView("search");
+              selectView("search");
             }}
             onOpenPerson={openPerson}
             onOpenMessage={openMessages}
-            onOpenActivity={() => setActiveView("activity")}
-            onOpenMedia={() => setActiveView("media")}
+            onOpenActivity={() => selectView("activity")}
+            onOpenMedia={() => selectView("media")}
             onSurprise={onSurprise}
             surprise={surprise}
             surpriseLoading={surpriseLoading}
@@ -1016,6 +1066,8 @@ export function DashboardClient({ api }: DashboardClientProps) {
             conversations={conversations}
             selectedConversation={selectedConversation}
             messages={messages}
+            threadSenders={threadSenders}
+            archiveSelfHint={archiveSelfHint}
             loading={messagesLoading}
             error={messagesError}
             page={messagesPage}
@@ -1037,6 +1089,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
             error={searchError}
             hasSearched={hasSearched}
             initialTerm={searchSeed}
+            ignoredConversation={filter.conversation ?? null}
             onSearch={search}
             onOpenConversation={openMessages}
           />
@@ -1103,7 +1156,7 @@ export function DashboardClient({ api }: DashboardClientProps) {
     <main className="min-h-screen overflow-x-hidden bg-paper lg:flex lg:items-start lg:overflow-visible">
       <DashboardSidebar
         active={activeView}
-        onSelect={setActiveView}
+        onSelect={selectView}
         showFootprint={showFootprint || footprintLoading}
       />
       <div className="min-w-0 flex-1 bg-paper">
@@ -1112,10 +1165,9 @@ export function DashboardClient({ api }: DashboardClientProps) {
           title={activeLabel.title}
           subtitle={activeLabel.subtitle}
           messageCount={messageCount}
-          onExport={() => setActiveView("export")}
+          onExport={() => selectView("export")}
         />
-        {/* Full width in the content column */}
-        <div className="w-full space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+        <div className="mx-auto w-full max-w-[1280px] space-y-5 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
           {workerStalled ? (
             <StatePanel
               kind="error"

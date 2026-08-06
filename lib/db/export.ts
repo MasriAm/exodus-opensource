@@ -1,7 +1,6 @@
 import writeExcelFile from "write-excel-file/universal";
 
 import type {
-  ExportFormat,
   ExportFormatMetadata,
   ExportTable,
   ExportTableMetadata,

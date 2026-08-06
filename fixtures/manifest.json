@@ -32,12 +32,12 @@
     },
     "eventCount": 51,
     "eventsPerKind": {
-      "archive_owner": 1,
       "follower": 18,
       "following": 12,
       "comment": 8,
       "interest": 8,
-      "profile_change": 4
+      "profile_change": 4,
+      "archive_owner": 1
     },
     "followersCount": 18,
     "followingCount": 12,

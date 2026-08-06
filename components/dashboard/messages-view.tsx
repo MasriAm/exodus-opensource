@@ -6,9 +6,9 @@ import { ArchivePanel } from "@/components/dashboard/archive-panel";
 import { PageControl } from "@/components/dashboard/page-control";
 import { StatePanel } from "@/components/state-panel";
 import { UserText } from "@/components/user-text";
-import { stripInstagramFolderId } from "@/lib/instagram-labels";
+import { displayConversationLabel } from "@/lib/instagram-labels";
 import { formatDateTime, pluralize } from "@/lib/format";
-import { isOutgoingSender } from "@/lib/ui-text";
+import { isOutgoingSender, resolveSelfSender } from "@/lib/ui-text";
 import { cn } from "@/lib/utils";
 
 export type ConversationItem = {
@@ -28,10 +28,17 @@ export type MessageItem = {
   platform: string;
 };
 
+type ThreadSender = {
+  sender: string;
+  messageCount: number;
+};
+
 type MessagesViewProps = {
   conversations: ConversationItem[];
   selectedConversation: string | null;
   messages: MessageItem[];
+  threadSenders?: ThreadSender[];
+  archiveSelfHint?: string | null;
   loading: boolean;
   error: string | null;
   page: number;
@@ -42,9 +49,10 @@ type MessagesViewProps = {
   onChangePage: (page: number) => void;
 };
 
+/** Day separators follow the reader's local calendar, like the timestamps do. */
 function dayKey(value: number | string | Date): string {
   const date = new Date(value);
-  return `${date.getUTCFullYear()}-${date.getUTCMonth()}-${date.getUTCDate()}`;
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
 function dayLabel(value: number | string | Date): string {
@@ -53,7 +61,6 @@ function dayLabel(value: number | string | Date): string {
     year: "numeric",
     month: "short",
     day: "numeric",
-    timeZone: "UTC",
   }).format(new Date(value));
 }
 
@@ -61,12 +68,13 @@ export function MessagesView({
   conversations,
   selectedConversation,
   messages,
+  threadSenders = [],
+  archiveSelfHint = null,
   loading,
   error,
   page,
   totalPages,
   owners,
-  globalArchiveOwnerName,
   onSelectConversation,
   onChangePage,
 }: MessagesViewProps) {
@@ -89,10 +97,13 @@ export function MessagesView({
     );
   }
 
-  const senders = messages.map((message) => message.sender);
   const selectedMeta = conversations.find(
     (entry) => entry.conversation === selectedConversation,
   );
+  const selfSender =
+    selectedConversation !== null
+      ? resolveSelfSender(selectedConversation, threadSenders, archiveSelfHint)
+      : null;
 
   return (
     <div className="space-y-5">
@@ -142,7 +153,7 @@ export function MessagesView({
         <ArchivePanel
           title={
             selectedConversation
-              ? `DMs: ${stripInstagramFolderId(selectedConversation)}`
+              ? `DMs: ${displayConversationLabel(selectedConversation)}`
               : "Choose a conversation"
           }
           subtitle={
@@ -191,7 +202,9 @@ export function MessagesView({
                   const outgoing = isOutgoingSender(
                     message.sender,
                     selectedConversation,
-                    senders,
+                    threadSenders,
+                    selfSender,
+                    archiveSelfHint,
                     owners[message.platform],
                   );
 
@@ -223,7 +236,7 @@ export function MessagesView({
                           <UserText
                             className={cn(
                               "block font-body text-[11px] font-semibold",
-                              outgoing ? "text-teal" : "text-teal",
+                              outgoing ? "text-cream/85" : "text-teal",
                             )}
                           >
                             {message.sender}

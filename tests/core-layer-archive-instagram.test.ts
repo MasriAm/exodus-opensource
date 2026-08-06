@@ -232,8 +232,10 @@ describe("Instagram parser plugin", () => {
       const follower = events.find((row) => row.kind === "follower");
       expect(follower).toBeDefined();
       expect(JSON.parse(follower?.payload ?? "{}")).toMatchObject({
+        // Handle comes from the profile URL; Arabic title stays as display name.
         name: "سارة",
-        value: "سارة",
+        value: "example",
+        href: "https://www.instagram.com/example",
       });
       const personal = events.find((row) => row.kind === "personal_info");
       expect(personal?.payload).toContain("مريم");
@@ -322,6 +324,111 @@ describe("Instagram parser plugin", () => {
         field: "bio",
         value: "طالب",
       });
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("reads modern followers shapes (wrapped + flat) for follow-back math", async () => {
+    const archive = await makeArchive([
+      {
+        path: "export/connections/followers_and_following/followers_1.json",
+        text: JSON.stringify({
+          relationships_followers: [
+            {
+              href: "https://www.instagram.com/flat_follower/",
+              value: "Flat Follower Display",
+              timestamp: 1_700_000_100,
+            },
+            {
+              title: "Nested",
+              string_list_data: [
+                {
+                  href: "https://www.instagram.com/nested_follower",
+                  value: "nested_follower",
+                  timestamp: 1_700_000_110,
+                },
+              ],
+            },
+          ],
+        }),
+      },
+      {
+        path: "export/connections/followers_and_following/following_1.json",
+        text: JSON.stringify({
+          relationships_following: [
+            {
+              string_list_data: [
+                {
+                  href: "https://www.instagram.com/flat_follower",
+                  value: "flat_follower",
+                  timestamp: 1_700_000_200,
+                },
+              ],
+            },
+            {
+              string_list_data: [
+                {
+                  href: "https://www.instagram.com/only_out",
+                  value: "only_out",
+                  timestamp: 1_700_000_210,
+                },
+              ],
+            },
+          ],
+        }),
+      },
+      {
+        path: "export/your_instagram_activity/messages/inbox/solo/message_1.json",
+        text: JSON.stringify({
+          participants: [{ name: "You" }],
+          messages: [
+            {
+              sender_name: "You",
+              timestamp_ms: 1_700_000_000_000,
+              content: "hi",
+            },
+          ],
+        }),
+      },
+    ]);
+
+    try {
+      const rows: NormalizedRow[] = [];
+      await instagramParser.parse(
+        archive,
+        async (batch) => {
+          rows.push(...batch);
+        },
+        () => undefined,
+      );
+      const events = rows.filter(
+        (row): row is EventRow => row.table === "events",
+      );
+      const followers = events.filter((row) => row.kind === "follower");
+      const following = events.filter((row) => row.kind === "following");
+      expect(followers).toHaveLength(2);
+      expect(following).toHaveLength(2);
+      expect(
+        followers.map((row) => JSON.parse(row.payload).value).sort(),
+      ).toEqual(["flat_follower", "nested_follower"]);
+
+      const { followingWithoutFollowBack } = await import("@/lib/follow-facts");
+      const graph = [
+        ...followers.map((row) => ({
+          kind: "follower" as const,
+          username: JSON.parse(row.payload).value as string,
+          occurredAtMs: row.occurred_at_ms,
+        })),
+        ...following.map((row) => ({
+          kind: "following" as const,
+          username: JSON.parse(row.payload).value as string,
+          occurredAtMs: row.occurred_at_ms,
+        })),
+      ];
+      expect(
+        followingWithoutFollowBack(graph).map((row) => row.username),
+      ).toEqual(["only_out"]);
     } finally {
       await archive.close();
     }

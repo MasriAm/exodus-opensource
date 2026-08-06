@@ -4,6 +4,7 @@ import {
   localUtcOffsetSeconds,
   localWallTimestampSql,
 } from "@/lib/calendar-day";
+import { canonicalFollowHandle } from "@/lib/follow-facts";
 import { computeStreakSilence } from "@/lib/streak-facts";
 import { ARABIC_STOPWORDS, ENGLISH_STOPWORDS } from "@/lib/text";
 
@@ -263,6 +264,8 @@ export async function deskHome(
       END AS active_to_ms
   `;
 
+  // Parameters must follow the order the clauses appear in overviewSql:
+  // messages, media, conversations, MIN×2, MAX×2.
   const overview = onlyRow(
     await preparedRows(connection, overviewSql, [
       ...msg.params,
@@ -707,6 +710,7 @@ export async function personDetail(
           conversation
         FROM media
         WHERE ${med.clause}
+          AND kind = 'image'
           AND zip_path NOT LIKE 'omitted://%'
         ORDER BY taken_at DESC NULLS LAST, rowid DESC
         LIMIT 24
@@ -967,26 +971,35 @@ export async function messageHeatmap(
   rawParams: MessageHeatmapParams,
 ): Promise<MessageHeatmapResult> {
   const params = requiredRecord(rawParams, "messageHeatmap parameters");
-  const year = boundedInteger(optionalNumber(params, "year"), new Date().getUTCFullYear(), 1970, 2100);
+  const year = boundedInteger(
+    optionalNumber(params, "year"),
+    new Date().getFullYear(),
+    1970,
+    2100,
+  );
   const filter = optionalFilter(params);
+  // Group by the browser's local calendar day so late-night messages don't
+  // slide onto the previous/next cell.
+  const localOffsetSec = localUtcOffsetSeconds();
+  const localSentAt = localWallTimestampSql("sent_at");
   const msg = messagesWhere({
     ...filter,
-    fromMs: filter.fromMs ?? Date.UTC(year, 0, 1),
-    toMs: filter.toMs ?? Date.UTC(year + 1, 0, 1),
+    fromMs: filter.fromMs ?? new Date(year, 0, 1).getTime(),
+    toMs: filter.toMs ?? new Date(year + 1, 0, 1).getTime(),
   });
 
   const rows = await preparedRows(
     connection,
     `
       SELECT
-        CAST(epoch(date_trunc('day', sent_at)) * 1000.0 AS DOUBLE) AS day_ms,
+        CAST(epoch(date_trunc('day', ${localSentAt})) * 1000.0 AS DOUBLE) AS day_ms,
         CAST(COUNT(*) AS DOUBLE) AS message_count
       FROM messages
       WHERE ${msg.clause}
       GROUP BY 1
       ORDER BY 1 ASC
     `,
-    msg.params,
+    [localOffsetSec, ...msg.params],
   );
 
   const days = rows.map((row) => ({
@@ -1008,8 +1021,10 @@ export async function dayMessages(
     throw new Error("dayMs is required.");
   }
   const filter = optionalFilter(params);
-  const fromMs = dayMs;
-  const toMs = dayMs + 86_400_000;
+  // dayMs is a local calendar day encoded as UTC midnight (see messageHeatmap).
+  const localOffsetMs = localUtcOffsetSeconds() * 1000;
+  const fromMs = dayMs - localOffsetMs;
+  const toMs = fromMs + 86_400_000;
   const msg = messagesWhere({ ...filter, fromMs, toMs });
   const limit = boundedInteger(optionalNumber(params, "limit"), 200, 1, 1_000);
 
@@ -1123,30 +1138,34 @@ export async function footprint(
       `
         SELECT
           kind,
-          COALESCE(
-            nullif(trim(regexp_extract(replace(json_extract_string(payload, '$.href'), '/_u/', '/'), 'instagram\\.com/([^/?#]+)', 1)), ''),
-            nullif(trim(json_extract_string(payload, '$.value')), ''),
-            nullif(trim(json_extract_string(payload, '$.name')), '')
-          ) AS username,
+          json_extract_string(payload, '$.href') AS href,
+          json_extract_string(payload, '$.value') AS value,
+          json_extract_string(payload, '$.name') AS name,
           epoch(occurred_at) * 1000.0 AS occurred_at_ms
         FROM events
         WHERE ${evt.clause}
           AND kind IN ('follower', 'following')
-          AND COALESCE(
-            nullif(trim(regexp_extract(replace(json_extract_string(payload, '$.href'), '/_u/', '/'), 'instagram\\.com/([^/?#]+)', 1)), ''),
-            nullif(trim(json_extract_string(payload, '$.value')), ''),
-            nullif(trim(json_extract_string(payload, '$.name')), '')
-          ) IS NOT NULL
         ORDER BY occurred_at DESC
-        LIMIT 10000
       `,
       evt.params,
     )
-  ).map((row) => ({
-    kind: readString(row, "kind") as "follower" | "following",
-    username: readString(row, "username"),
-    occurredAtMs: readNumber(row, "occurred_at_ms"),
-  }));
+  ).flatMap((row) => {
+    const username = canonicalFollowHandle({
+      href: readNullableString(row, "href"),
+      value: readNullableString(row, "value"),
+      name: readNullableString(row, "name"),
+    });
+    if (!username) {
+      return [];
+    }
+    return [
+      {
+        kind: readString(row, "kind") as "follower" | "following",
+        username,
+        occurredAtMs: readNumber(row, "occurred_at_ms"),
+      },
+    ];
+  });
 
   const personalInfo: FootprintPersonalInfo[] = (
     await preparedRows(
@@ -1251,6 +1270,26 @@ function personalInfoFields(payloadJson: string): FootprintPersonalInfoField[] {
       ? (record.data as Record<string, unknown>)
       : record;
 
+  // Prefer Instagram string_map_data / string_list_data human fields.
+  const stringMap = data.string_map_data;
+  if (typeof stringMap === "object" && stringMap !== null && !Array.isArray(stringMap)) {
+    const fields: FootprintPersonalInfoField[] = [];
+    for (const [key, entry] of Object.entries(stringMap as Record<string, unknown>)) {
+      const display = personalInfoValue(entry);
+      if (display !== null) {
+        fields.push({ key, value: display });
+      }
+    }
+    if (fields.length > 0) {
+      return fields;
+    }
+  }
+
+  const pathLabel =
+    typeof record.path === "string"
+      ? personalInfoLabelFromPath(record.path)
+      : null;
+
   const fields: FootprintPersonalInfoField[] = [];
   for (const [key, value] of Object.entries(data)) {
     if (
@@ -1258,16 +1297,33 @@ function personalInfoFields(payloadJson: string): FootprintPersonalInfoField[] {
       key === "timestamp_ms" ||
       key === "creation_timestamp" ||
       key === "created_timestamp" ||
-      key === "path"
+      key === "path" ||
+      key === "media_map_data" ||
+      key === "cross_post_source" ||
+      key === "media_metadata" ||
+      key === "uri"
     ) {
       continue;
     }
     const display = personalInfoValue(value);
     if (display !== null) {
-      fields.push({ key, value: display });
+      // Instagram leaves rows as `{ value, timestamp }` — the readable label
+      // lives in the JSON path, not the key.
+      const label = key === "value" || key === "href" ? pathLabel ?? key : key;
+      fields.push({ key: label, value: display });
     }
   }
   return fields;
+}
+
+/** "$.profile_user[0].string_map_data.Email" → "Email". */
+function personalInfoLabelFromPath(path: string): string | null {
+  const last = path.split(".").filter(Boolean).at(-1);
+  if (last === undefined || last.startsWith("$")) {
+    return null;
+  }
+  const cleaned = last.replace(/\[\d+\]$/, "").replace(/_/g, " ").trim();
+  return cleaned.length > 0 ? cleaned : null;
 }
 
 function personalInfoValue(value: unknown): string | null {
@@ -1276,7 +1332,15 @@ function personalInfoValue(value: unknown): string | null {
   }
   if (typeof value === "string") {
     const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
+    if (
+      trimmed.length === 0 ||
+      trimmed.startsWith("$") ||
+      trimmed.startsWith("{") ||
+      trimmed.startsWith("[")
+    ) {
+      return null;
+    }
+    return trimmed;
   }
   if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
@@ -1290,13 +1354,13 @@ function personalInfoValue(value: unknown): string | null {
   if (typeof value === "object") {
     const nested = value as Record<string, unknown>;
     if (typeof nested.value === "string" && nested.value.trim().length > 0) {
-      return nested.value.trim();
+      const trimmed = nested.value.trim();
+      if (!trimmed.startsWith("$") && !trimmed.startsWith("{")) {
+        return trimmed;
+      }
     }
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return null;
-    }
+    // Never dump raw nested JSON into the footprint UI.
+    return null;
   }
   return null;
 }

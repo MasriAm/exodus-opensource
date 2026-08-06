@@ -1,3 +1,7 @@
+import type { ArchiveFilter } from "./archive-filter";
+
+export type { ArchiveFilter };
+
 export const QUERY_NAMES = [
   "conversationList",
   "messagesPage",
@@ -34,12 +38,7 @@ export interface RowCounts {
 export interface ConversationListParams {
   limit?: number;
   offset?: number;
-  filter?: {
-    fromMs?: number | null;
-    toMs?: number | null;
-    platform?: string | null;
-    conversation?: string | null;
-  };
+  filter?: ArchiveFilter;
 }
 
 export interface ConversationListItem {
@@ -70,11 +69,7 @@ export interface MessagesPageParams {
   /** Chronological page offset (0-based). When set, cursor `before` is ignored. */
   offset?: number;
   limit?: number;
-  filter?: {
-    fromMs?: number | null;
-    toMs?: number | null;
-    platform?: string | null;
-  };
+  filter?: ArchiveFilter;
 }
 
 export interface MessageItem {
@@ -94,6 +89,10 @@ export interface MessagesPageResult {
   totalCount: number;
   offset: number;
   limit: number;
+  /** Full-thread sender roster for stable you/them alignment across pages. */
+  threadSenders: Array<{ sender: string; messageCount: number }>;
+  /** Sender that appears in the most conversations — usually you. */
+  archiveSelfHint: string | null;
 }
 
 export interface CountsResult extends RowCounts {
@@ -105,12 +104,7 @@ export interface SearchParams {
   term: string;
   limit?: number;
   offset?: number;
-  filter?: {
-    fromMs?: number | null;
-    toMs?: number | null;
-    platform?: string | null;
-    conversation?: string | null;
-  };
+  filter?: ArchiveFilter;
 }
 
 export interface SearchHit {
@@ -177,12 +171,7 @@ export interface MediaListParams {
   conversation?: string | null;
   limit?: number;
   offset?: number;
-  filter?: {
-    fromMs?: number | null;
-    toMs?: number | null;
-    platform?: string | null;
-    conversation?: string | null;
-  };
+  filter?: ArchiveFilter;
 }
 
 export interface MediaItem {
@@ -225,12 +214,7 @@ export interface OnThisDayParams {
   month?: number;
   day?: number;
   limit?: number;
-  filter?: {
-    fromMs?: number | null;
-    toMs?: number | null;
-    platform?: string | null;
-    conversation?: string | null;
-  };
+  filter?: ArchiveFilter;
 }
 
 export interface OnThisDayResult {
@@ -243,12 +227,7 @@ export interface OnThisDayResult {
 export interface PeopleListParams {
   limit?: number;
   offset?: number;
-  filter?: {
-    fromMs?: number | null;
-    toMs?: number | null;
-    platform?: string | null;
-    conversation?: string | null;
-  };
+  filter?: ArchiveFilter;
 }
 
 export interface PeopleListItem {
@@ -269,11 +248,7 @@ export interface PeopleListResult {
 
 export interface PersonDetailParams {
   conversation: string;
-  filter?: {
-    fromMs?: number | null;
-    toMs?: number | null;
-    platform?: string | null;
-  };
+  filter?: ArchiveFilter;
 }
 
 export interface PersonDynamics {
@@ -318,12 +293,7 @@ export interface PersonDetailResult {
 
 export interface MessageHeatmapParams {
   year: number;
-  filter?: {
-    fromMs?: number | null;
-    toMs?: number | null;
-    platform?: string | null;
-    conversation?: string | null;
-  };
+  filter?: ArchiveFilter;
 }
 
 export interface MessageHeatmapResult {
@@ -335,12 +305,7 @@ export interface MessageHeatmapResult {
 export interface DayMessagesParams {
   dayMs: number;
   limit?: number;
-  filter?: {
-    fromMs?: number | null;
-    toMs?: number | null;
-    platform?: string | null;
-    conversation?: string | null;
-  };
+  filter?: ArchiveFilter;
 }
 
 export interface DayMessagesResult {
@@ -494,6 +459,7 @@ export interface WrappedStatsResult {
   topContacts: WrappedContact[];
   messagesByHour: WrappedHour[];
   peakHour: number | null;
+  /** Messages in the single busiest local hour (legacy name kept for the API). */
   threeAmEraMessages: number;
   busiestDay: WrappedBusiestDay | null;
   topWords: WrappedWord[];

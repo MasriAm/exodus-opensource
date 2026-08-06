@@ -123,6 +123,32 @@ function getDatabase(): Promise<DatabaseState> {
   return databasePromise;
 }
 
+/**
+ * DuckDB keeps JSON functions in an extension it would otherwise fetch from
+ * extensions.duckdb.org — impossible here (CSP `connect-src 'self'`, offline
+ * first). The signed binary is mirrored under `public/duckdb/extensions`.
+ */
+async function loadJsonExtension(
+  connection: duckdb.AsyncDuckDBConnection,
+): Promise<void> {
+  const repository = new URL(
+    "/duckdb/extensions",
+    globalThis.location.origin,
+  ).toString();
+  try {
+    await connection.query(
+      `SET custom_extension_repository='${repository}'`,
+    );
+    await connection.query("INSTALL json");
+    await connection.query("LOAD json");
+  } catch (error: unknown) {
+    console.error(
+      "The self-hosted DuckDB json extension could not be loaded.",
+      error,
+    );
+  }
+}
+
 async function initializeDatabase(): Promise<DatabaseState> {
   const asset = (fileName: string): string =>
     new URL(`/duckdb/${fileName}`, globalThis.location.origin).toString();
@@ -157,6 +183,7 @@ async function initializeDatabase(): Promise<DatabaseState> {
       },
     });
     connection = await database.connect();
+    await loadJsonExtension(connection);
     for (const sql of INITIALIZATION_SQL) {
       await connection.query(sql);
     }

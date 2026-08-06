@@ -52,10 +52,13 @@ export function localUtcOffsetSeconds(ms: number = Date.now()): number {
 /**
  * DuckDB expression: shift a TIMESTAMP into local wall time before EXTRACT.
  * `offsetSeconds` must also be bound as a prepared parameter wherever `?` appears.
+ *
+ * Interval arithmetic keeps the result a plain TIMESTAMP — `to_timestamp()`
+ * would produce a TIMESTAMPTZ, which needs ICU and can fault in duckdb-wasm.
  */
 export function localWallTimestampSql(
   column: string,
   offsetParam = "?",
 ): string {
-  return `to_timestamp(epoch(${column}) + ${offsetParam})`;
+  return `(${column} + to_seconds(CAST(${offsetParam} AS BIGINT)))`;
 }

@@ -6,8 +6,12 @@ import { TagBox } from "@/components/capsule/tag-box";
 import { ArchivePanel } from "@/components/dashboard/archive-panel";
 import { StatePanel } from "@/components/state-panel";
 import { UserText } from "@/components/user-text";
-import { formatDate, formatNumber, pluralize } from "@/lib/format";
-import { followingWithoutFollowBack } from "@/lib/follow-facts";
+import { formatDate, formatNumber } from "@/lib/format";
+import {
+  followingWithoutFollowBack,
+  normalizeFollowUsername,
+  uniqueFollowEvents,
+} from "@/lib/follow-facts";
 import type { FootprintResult } from "@/lib/db/types";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +21,7 @@ type FootprintViewProps = {
   error: string | null;
 };
 
-type FollowFilter = "all" | "follower" | "following" | "not_back";
+type FollowFilter = "follower" | "following" | "not_back";
 
 const LIST_PAGE = 25;
 
@@ -64,7 +68,7 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
   const [year, setYear] = useState<number | null>(null);
   const [commentYear, setCommentYear] = useState<number | "all">("all");
   const [commentQuery, setCommentQuery] = useState("");
-  const [followKind, setFollowKind] = useState<FollowFilter>("all");
+  const [followKind, setFollowKind] = useState<FollowFilter>("follower");
   const [followQuery, setFollowQuery] = useState("");
   const [followLimit, setFollowLimit] = useState(LIST_PAGE);
   const [commentLimit, setCommentLimit] = useState(LIST_PAGE);
@@ -77,6 +81,14 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
 
   const notFollowingBack = useMemo(
     () => followingWithoutFollowBack(data?.followEvents ?? []),
+    [data],
+  );
+  const uniqueFollowers = useMemo(
+    () => uniqueFollowEvents(data?.followEvents ?? [], "follower"),
+    [data],
+  );
+  const uniqueFollowing = useMemo(
+    () => uniqueFollowEvents(data?.followEvents ?? [], "following"),
     [data],
   );
 
@@ -106,20 +118,98 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
     const base =
       followKind === "not_back"
         ? notFollowingBack
-        : data.followEvents.filter(
-            (row) => followKind === "all" || row.kind === followKind,
-          );
-    const needle = followQuery.trim().toLocaleLowerCase();
+        : followKind === "following"
+          ? uniqueFollowing
+          : uniqueFollowers;
+    const needle = normalizeFollowUsername(followQuery);
     if (!needle) {
       return base;
     }
     return base.filter((row) =>
-      row.username.toLocaleLowerCase().includes(needle),
+      normalizeFollowUsername(row.username).includes(needle),
     );
-  }, [data, followKind, followQuery, notFollowingBack]);
+  }, [
+    data,
+    followKind,
+    followQuery,
+    notFollowingBack,
+    uniqueFollowers,
+    uniqueFollowing,
+  ]);
 
   const shownFollows = visibleFollows.slice(0, followLimit);
   const shownComments = visibleComments.slice(0, commentLimit);
+
+  const profileSnapshots = useMemo(() => {
+    if (!data?.profileHistory || data.profileHistory.length === 0) return [];
+
+    const sorted = [...data.profileHistory].sort(
+      (a, b) => a.occurredAtMs - b.occurredAtMs,
+    );
+
+    // Group by exact timestamp to detect simultaneous changes
+    const grouped = new Map<number, typeof sorted>();
+    for (const change of sorted) {
+      if (!grouped.has(change.occurredAtMs)) grouped.set(change.occurredAtMs, []);
+      grouped.get(change.occurredAtMs)!.push(change);
+    }
+    const uniqueTimestamps = Array.from(grouped.keys()).sort((a, b) => a - b);
+
+    // Fallback username if there are no username changes
+    const fallbackUsername =
+      data.personalInfo
+        .flatMap((p) => p.fields)
+        .find((f) => f.key.toLowerCase().includes("username"))?.value ??
+      "Unknown";
+
+    const snaps: Array<{
+      username: string;
+      bio: string;
+      startDateMs: number;
+      endDateMs: number | null;
+      changed: "username" | "bio" | "both" | "initial";
+    }> = [];
+
+    let currentUsername =
+      sorted.find((r) => r.field === "username")?.value ?? fallbackUsername;
+    let currentBio = sorted.find((r) => r.field === "bio")?.value ?? "—";
+
+    for (const ts of uniqueTimestamps) {
+      const changes = grouped.get(ts)!;
+      let userChanged = false;
+      let bioChanged = false;
+
+      for (const change of changes) {
+        if (change.field === "username") {
+          currentUsername = change.value;
+          userChanged = true;
+        }
+        if (change.field === "bio") {
+          currentBio = change.value;
+          bioChanged = true;
+        }
+      }
+
+      let changedLabel: "username" | "bio" | "both" | "initial" = "initial";
+      if (userChanged && bioChanged) changedLabel = "both";
+      else if (userChanged) changedLabel = "username";
+      else if (bioChanged) changedLabel = "bio";
+
+      const last = snaps[snaps.length - 1];
+      if (last) {
+        last.endDateMs = ts;
+      }
+      snaps.push({
+        username: currentUsername,
+        bio: currentBio,
+        startDateMs: ts,
+        endDateMs: null,
+        changed: changedLabel,
+      });
+    }
+
+    return snaps.reverse();
+  }, [data?.profileHistory, data?.personalInfo]);
 
   if (error) {
     return (
@@ -144,64 +234,6 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
     data.personalInfo.length > 0 ||
     data.calls.length > 0 ||
     data.systemNotes.length > 0;
-
-  const profileSnapshots = useMemo(() => {
-    if (!data?.profileHistory || data.profileHistory.length === 0) return [];
-    
-    const sorted = [...data.profileHistory].sort((a, b) => a.occurredAtMs - b.occurredAtMs);
-    
-    // Group by exact timestamp to detect simultaneous changes
-    const grouped = new Map<number, typeof sorted>();
-    for (const change of sorted) {
-      if (!grouped.has(change.occurredAtMs)) grouped.set(change.occurredAtMs, []);
-      grouped.get(change.occurredAtMs)!.push(change);
-    }
-    const uniqueTimestamps = Array.from(grouped.keys()).sort((a, b) => a - b);
-
-    // Fallback username if there are no username changes
-    const fallbackUsername = data?.personalInfo.flatMap(p => p.fields).find(f => f.key.toLowerCase().includes("username"))?.value ?? "Unknown";
-
-    const snaps: Array<{ username: string; bio: string; startDateMs: number; endDateMs: number | null; changed: "username" | "bio" | "both" | "initial" }> = [];
-    
-    let currentUsername = sorted.find((r) => r.field === "username")?.value ?? fallbackUsername;
-    let currentBio = sorted.find((r) => r.field === "bio")?.value ?? "—";
-    
-    for (const ts of uniqueTimestamps) {
-      const changes = grouped.get(ts)!;
-      let userChanged = false;
-      let bioChanged = false;
-      
-      for (const change of changes) {
-        if (change.field === "username") {
-          currentUsername = change.value;
-          userChanged = true;
-        }
-        if (change.field === "bio") {
-          currentBio = change.value;
-          bioChanged = true;
-        }
-      }
-      
-      let changedLabel: "username" | "bio" | "both" | "initial" = "initial";
-      if (userChanged && bioChanged) changedLabel = "both";
-      else if (userChanged) changedLabel = "username";
-      else if (bioChanged) changedLabel = "bio";
-      
-      const last = snaps[snaps.length - 1];
-      if (last) {
-        last.endDateMs = ts;
-      }
-      snaps.push({
-        username: currentUsername,
-        bio: currentBio,
-        startDateMs: ts,
-        endDateMs: null,
-        changed: changedLabel,
-      });
-    }
-    
-    return snaps.reverse();
-  }, [data?.profileHistory, data?.personalInfo]);
 
   if (!hasAnything) {
     return (
@@ -268,7 +300,7 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
             <ArchivePanel
               className="h-150"
               title="Followers & following"
-              subtitle="Connections from Instagram's followers/following files. Filter to people you follow who don't follow you back."
+              subtitle="Follow back = accounts you follow that do not follow you back."
               action={
                 <select
                   className="border border-ink/30 bg-cream px-2 py-1.5 font-display text-sm outline-none"
@@ -278,13 +310,14 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
                     setFollowLimit(LIST_PAGE);
                   }}
                 >
-                  <option value="all">
-                    All ({formatNumber(data.followEvents.length)})
+                  <option value="follower">
+                    Followers ({formatNumber(uniqueFollowers.length)})
                   </option>
-                  <option value="follower">Followers</option>
-                  <option value="following">Following</option>
+                  <option value="following">
+                    Following ({formatNumber(uniqueFollowing.length)})
+                  </option>
                   <option value="not_back">
-                    Not following back ({formatNumber(notFollowingBack.length)})
+                    Follow back ({formatNumber(notFollowingBack.length)})
                   </option>
                 </select>
               }
@@ -325,12 +358,14 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
                           className="truncate font-display text-xs font-bold text-ink"
                           dir="auto"
                         >
-                          {row.username}
+                          @{normalizeFollowUsername(row.username) || row.username}
                         </p>
                         <p className="font-display text-[10px] uppercase tracking-[0.08em] text-ink/65">
                           {followKind === "not_back"
-                            ? "you follow · no follow back"
-                            : row.kind}
+                            ? "you follow · they don't"
+                            : followKind === "follower"
+                              ? "follower"
+                              : "following"}
                         </p>
                       </div>
                       <span className="shrink-0 font-display text-[11px] text-ink/70">
@@ -347,6 +382,46 @@ export function FootprintView({ data, loading, error }: FootprintViewProps) {
             </ArchivePanel>
           ) : null}
         </div>
+      ) : null}
+
+      {data.personalInfo.some((row) => row.fields.length > 0) ? (
+        <ArchivePanel
+          title="Personal information"
+          subtitle="Readable fields from Instagram's personal information export."
+        >
+          <ul className="space-y-3">
+            {data.personalInfo
+              .filter((row) => row.fields.length > 0)
+              .map((row) => (
+                <li
+                  key={`${row.occurredAtMs}-${row.path}`}
+                  className="border border-ink/20 bg-receipt px-3 py-3"
+                >
+                  <p className="font-display text-[11px] font-bold uppercase tracking-[0.08em] text-ink/75">
+                    {formatDate(row.occurredAtMs)}
+                  </p>
+                  <dl className="mt-2 space-y-1">
+                    {row.fields.map((field) => (
+                      <div
+                        key={`${field.key}-${field.value}`}
+                        className="flex flex-wrap gap-x-3 gap-y-1"
+                      >
+                        <dt className="font-display text-xs font-bold text-teal">
+                          {field.key}
+                        </dt>
+                        <dd
+                          className="font-body text-[15px] font-medium text-ink"
+                          dir="auto"
+                        >
+                          {field.value}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </li>
+              ))}
+          </ul>
+        </ArchivePanel>
       ) : null}
 
       {data.interestsByYear.length > 0 && activeYear !== null ? (

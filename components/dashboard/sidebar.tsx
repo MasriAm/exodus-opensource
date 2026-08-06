@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import type { DeskSection } from "./desk-section";
@@ -75,14 +74,16 @@ export function DashboardSidebar({
     <aside className="relative flex overflow-hidden bg-rail text-white lg:sticky lg:top-0 lg:h-screen lg:max-h-screen lg:w-[230px] lg:shrink-0 lg:flex-col">
       <div className="sidebar-grain" aria-hidden="true" />
       <div className="relative z-[1] flex items-center justify-between gap-3 px-5 py-4 lg:block lg:px-6 lg:pb-4 lg:pt-7">
-        <Link
-          href="/"
+        <button
+          type="button"
+          onClick={() => onSelect("desk")}
           className="flex items-center gap-1 font-display text-2xl font-bold tracking-[0.22em] text-teal transition-opacity hover:opacity-90 lg:text-[1.65rem]"
-          aria-label="Exodus home"
+          aria-label="Exodus dashboard overview"
         >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.png" alt="E" className="h-9 w-auto lg:h-11 shrink-0 -mt-1" />
           <span>XODUS</span>
-        </Link>
+        </button>
       </div>
 
       <nav
@@ -90,7 +91,7 @@ export function DashboardSidebar({
         className="relative z-[1] flex min-h-0 flex-1 flex-col"
       >
         {/* Scrollable mid section — Wrapped/Export stay pinned below. */}
-        <div className="flex gap-0 overflow-x-auto px-2 pb-2 lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:px-0 lg:pb-0">
+        <div className="sidebar-scroll flex gap-0 overflow-x-auto px-2 pb-2 lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-y-auto lg:overflow-x-hidden lg:px-0 lg:pb-0">
           <div className="flex gap-0 lg:w-full lg:flex-col lg:border-t lg:border-dotted lg:border-white/15">
             {items.map(({ id, label }) => (
               <NavItem

@@ -10,6 +10,10 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  localUtcOffsetSeconds,
+  localWallTimestampSql,
+} from "../lib/calendar-day";
+import {
   createJsonExportBlob,
   createSpreadsheetExportBlob,
   getExportSelectSql,
@@ -114,6 +118,10 @@ const messages: NormalizedRow[] = [
     media_ref: null,
   },
 ];
+
+const messageTimestamps = messages.map((row) =>
+  row.table === "messages" ? row.sent_at_ms : 0,
+);
 
 const media: NormalizedRow[] = [
   {
@@ -327,11 +335,23 @@ describe("DuckDB named-query SQL", () => {
     );
     expect(queryRows(wrapped.topContacts)).toHaveLength(2);
 
-    const hours = queryRows(wrapped.hours);
+    const hours = preparedRows(wrapped.hours, [localUtcOffsetSeconds()]);
     expect(hours).toHaveLength(24);
-    const threeAm = hours.find((row) => readNumber(row, "hour") === 3);
-    expect(threeAm).toBeDefined();
-    expect(readNumber(threeAm as SqlRow, "message_count")).toBe(2);
+    const totalHourMessages = hours.reduce(
+      (sum, row) => sum + readNumber(row, "message_count"),
+      0,
+    );
+    expect(totalHourMessages).toBe(7);
+    const expectedByHour = new Map<number, number>();
+    for (const ms of messageTimestamps) {
+      const hour = new Date(ms).getHours();
+      expectedByHour.set(hour, (expectedByHour.get(hour) ?? 0) + 1);
+    }
+    for (const [hour, count] of expectedByHour) {
+      const row = hours.find((entry) => readNumber(entry, "hour") === hour);
+      expect(row).toBeDefined();
+      expect(readNumber(row as SqlRow, "message_count")).toBe(count);
+    }
 
     const busiest = oneRow(queryRows(wrapped.busiestDay));
     expect(readString(busiest, "active_date")).toBe("2024-01-01");
@@ -426,6 +446,86 @@ describe("DuckDB named-query SQL", () => {
     const jsonText = await jsonBlob.text();
     expect(JSON.parse(jsonText)).toHaveLength(7);
     expect(jsonText).toContain("مرحبا");
+  });
+});
+
+describe("calendar and thread SQL", () => {
+  it("buckets heatmap days by the local calendar, not UTC", () => {
+    const offsetSec = localUtcOffsetSeconds();
+    const rows = preparedRows(
+      `
+        SELECT
+          CAST(epoch(date_trunc('day', ${localWallTimestampSql("sent_at")})) * 1000.0 AS DOUBLE) AS day_ms,
+          CAST(COUNT(*) AS DOUBLE) AS message_count
+        FROM messages
+        GROUP BY 1
+        ORDER BY 1 ASC
+      `,
+      [offsetSec],
+    );
+
+    const expected = new Map<number, number>();
+    for (const sentAtMs of messageTimestamps) {
+      const date = new Date(sentAtMs);
+      const key = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+      expected.set(key, (expected.get(key) ?? 0) + 1);
+    }
+
+    expect(rows).toHaveLength(expected.size);
+    for (const row of rows) {
+      const dayMs = readNumber(row, "day_ms");
+      expect(expected.get(dayMs)).toBe(readNumber(row, "message_count"));
+    }
+    expect(
+      rows.reduce((sum, row) => sum + readNumber(row, "message_count"), 0),
+    ).toBe(messages.length);
+  });
+
+  it("reads a day back using the same local-day key", () => {
+    const offsetMs = localUtcOffsetSeconds() * 1000;
+    const first = new Date(messageTimestamps[0]);
+    const dayMs = Date.UTC(
+      first.getFullYear(),
+      first.getMonth(),
+      first.getDate(),
+    );
+    const rows = preparedRows(
+      `
+        SELECT CAST(COUNT(*) AS DOUBLE) AS n
+        FROM messages
+        WHERE sent_at >= epoch_ms(CAST(? AS BIGINT))
+          AND sent_at < epoch_ms(CAST(? AS BIGINT))
+      `,
+      [dayMs - offsetMs, dayMs - offsetMs + 86_400_000],
+    );
+    expect(readNumber(oneRow(rows), "n")).toBe(5);
+  });
+
+  it("returns the full thread roster and an archive-wide self hint", () => {
+    const roster = preparedRows(
+      `
+        SELECT sender, CAST(COUNT(*) AS DOUBLE) AS message_count
+        FROM messages
+        WHERE conversation = ?
+        GROUP BY sender
+        ORDER BY COUNT(*) DESC, sender ASC
+      `,
+      ["alpha"],
+    );
+    expect(roster.map((row) => readString(row, "sender"))).toEqual([
+      "Amina",
+      "Yousef",
+    ]);
+
+    // Ranked by threads spanned, then volume, then name — a stable "you" guess.
+    const hint = queryRows(`
+      SELECT sender
+      FROM messages
+      GROUP BY sender
+      ORDER BY COUNT(DISTINCT conversation) DESC, COUNT(*) DESC, sender ASC
+      LIMIT 1
+    `);
+    expect(readString(hint[0], "sender")).toBe("Amina");
   });
 });
 

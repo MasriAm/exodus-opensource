@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  conversationStorageKey,
   isInstagramSystemMessage,
   stripInstagramFolderId,
 } from "../../lib/instagram-labels";
@@ -61,20 +62,25 @@ const messageThreadSchema = z.object({
 const connectionDatumSchema = z.object({
   href: z.string().optional(),
   value: z.string().optional(),
-  timestamp: z.number().int(),
+  // Instagram sometimes emits whole-second floats; accept any finite number.
+  timestamp: z.number().optional(),
 });
 
 const stringMapDatumSchema = z.object({
   href: z.string().optional(),
   value: z.string().optional(),
-  timestamp: z.number().int().optional(),
+  timestamp: z.number().optional(),
 });
 
 const connectionEntrySchema = z
   .object({
     title: z.string().optional(),
     string_list_data: z.array(connectionDatumSchema).optional(),
-    string_map_data: z.record(stringMapDatumSchema).optional(),
+    string_map_data: z.record(z.string(), stringMapDatumSchema).optional(),
+    // Newer follower exports put href/value/timestamp on the entry itself.
+    href: z.string().optional(),
+    value: z.string().optional(),
+    timestamp: z.number().optional(),
   })
   .transform((data) => {
     const list = data.string_list_data ? [...data.string_list_data] : [];
@@ -105,6 +111,17 @@ const connectionEntrySchema = z
           href: hrefValue,
         });
       }
+    }
+    if (
+      list.length === 0 &&
+      (data.href || data.value) &&
+      (data.timestamp !== undefined || data.href || data.value)
+    ) {
+      list.push({
+        href: data.href,
+        value: data.value,
+        timestamp: data.timestamp ?? 0,
+      });
     }
     return {
       title: data.title,
@@ -222,7 +239,7 @@ function messageEntryInfo(path: string): MessageEntryInfo | null {
 
   return {
     path,
-    conversation: stripInstagramFolderId(
+    conversation: conversationStorageKey(
       fixMojibake(segments[messagesIndex + 2]),
     ),
     page: Number.parseInt(match[1], 10),
@@ -230,12 +247,12 @@ function messageEntryInfo(path: string): MessageEntryInfo | null {
 }
 
 function connectionEntryInfo(path: string): ConnectionEntryInfo | null {
-  const sequenceIndex = containsPathSequence(path, [
-    "connections",
-    "followers_and_following",
-  ]);
-  const segments = entryPathSegments(path);
-  if (sequenceIndex < 0 || segments.length !== sequenceIndex + 3) {
+  const segments = entryPathSegments(path).map((segment) =>
+    segment.toLocaleLowerCase(),
+  );
+  // Accept any depth under followers_and_following (exports nest this folder
+  // under account / date prefixes).
+  if (!segments.includes("followers_and_following")) {
     return null;
   }
 
@@ -371,26 +388,33 @@ function extractConnectionEntries(
 ): ConnectionEntry[] {
   const direct = connectionEntriesSchema.safeParse(value);
   if (direct.success) {
-    return direct.data;
+    return direct.data.filter((entry) => entry.string_list_data.length > 0);
   }
 
   if (!isRecord(value)) {
-    return validateJson(connectionEntriesSchema, value, source);
+    // Last resort: validate and keep only rows that yielded a username datum.
+    return validateJson(connectionEntriesSchema, value, source).filter(
+      (entry) => entry.string_list_data.length > 0,
+    );
   }
 
   const entries: ConnectionEntry[] = [];
-  const collections = Object.entries(value);
-  if (collections.length === 0) {
-    return entries;
-  }
-
-  for (const [collectionName, collection] of collections) {
+  for (const [, collection] of Object.entries(value)) {
+    if (!Array.isArray(collection)) {
+      continue;
+    }
+    // relationships_followers / relationships_following, or any nested array.
+    const parsed = connectionEntriesSchema.safeParse(collection);
+    if (!parsed.success) {
+      continue;
+    }
     entries.push(
-      ...validateJson(
-        connectionEntriesSchema,
-        collection,
-        `${source}#${collectionName}`,
-      ),
+      ...parsed.data.filter((entry) => entry.string_list_data.length > 0),
+    );
+  }
+  if (entries.length === 0) {
+    throw new Error(
+      `JSON entry ${source} has an unsupported followers/following shape.`,
     );
   }
   return entries;
@@ -442,8 +466,9 @@ async function parseMessages(
     const raw = await readJsonEntry(entries, entry.path);
     const repaired = repairInstagramStrings(raw);
     const thread = validateJson(messageThreadSchema, repaired, entry.path);
-    // Folder slug is `username_numericId` — keep the handle, drop the id.
-    const conversation = stripInstagramFolderId(entry.conversation);
+    // Folder slug is `username_numericId` — keep the handle, drop the id
+    // (except "Instagram User" deleted threads which keep the id).
+    const conversation = conversationStorageKey(entry.conversation);
 
     for (const message of thread.messages) {
       const attachments = collectAttachments(message).map(
@@ -500,6 +525,41 @@ async function parseMessages(
   }
 }
 
+function connectionUsername(
+  datum: { href?: string; value?: string },
+  title: string | undefined,
+): string | null {
+  const fromHref = datum.href
+    ? datum.href.match(/instagram\.com\/(?:_u\/)?([^/?#]+)/i)?.[1]
+    : undefined;
+  // Profile URL handle is stable; export "value"/"title" are often display names.
+  for (const candidate of [fromHref, datum.value, title]) {
+    const trimmed = candidate?.trim();
+    if (trimmed) {
+      try {
+        return fixMojibake(decodeURIComponent(trimmed).replace(/^@+/, ""));
+      } catch {
+        return fixMojibake(trimmed.replace(/^@+/, ""));
+      }
+    }
+  }
+  return null;
+}
+
+function connectionDisplayName(
+  datum: { href?: string; value?: string },
+  title: string | undefined,
+  handle: string,
+): string {
+  for (const candidate of [title, datum.value]) {
+    const trimmed = candidate?.trim();
+    if (trimmed) {
+      return fixMojibake(trimmed);
+    }
+  }
+  return handle;
+}
+
 async function parseConnections(
   entries: Parameters<DataParser["parse"]>[0],
   connectionEntries: readonly ConnectionEntryInfo[],
@@ -512,20 +572,28 @@ async function parseConnections(
 
     for (const connection of connections) {
       for (const datum of connection.string_list_data) {
+        const username = connectionUsername(datum, connection.title);
+        if (!username) {
+          continue;
+        }
         await batch.add(
           {
             table: "events",
             platform: "instagram",
             kind: entry.kind,
             occurred_at_ms: epochToMilliseconds(
-              datum.timestamp,
+              datum.timestamp ?? 0,
               entry.path,
             ),
             payload: stringifyJson(
               {
                 href: datum.href ?? null,
-                name: connection.title ?? datum.value ?? null,
-                value: datum.value ?? null,
+                name: connectionDisplayName(
+                  datum,
+                  connection.title,
+                  username,
+                ),
+                value: username,
               },
               entry.path,
             ),
@@ -626,7 +694,7 @@ async function parseComments(
               table: "events",
               platform: "instagram",
               kind: "comment",
-              occurred_at_ms: epochToMilliseconds(datum.timestamp, path),
+              occurred_at_ms: epochToMilliseconds(datum.timestamp ?? 0, path),
               payload: stringifyJson(
                 {
                   text,
@@ -677,7 +745,7 @@ async function parseAdsInterests(
               table: "events",
               platform: "instagram",
               kind: "interest",
-              occurred_at_ms: epochToMilliseconds(datum.timestamp, path),
+              occurred_at_ms: epochToMilliseconds(datum.timestamp ?? 0, path),
               payload: stringifyJson({ topic }, path),
             },
             path,

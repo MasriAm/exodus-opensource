@@ -116,48 +116,70 @@ export function SessionGate({
     let active = true;
     setPhase("pending");
 
-    void withTimeout(api.counts(), COUNTS_TIMEOUT_MS, "sessionGate.counts")
-      .then((counts) => {
+    const probe = async () => {
+      const hadSession = hadLiveSessionMarker();
+      // After a soft-nav race or a busy worker, empty counts can be transient.
+      const attempts = hadSession ? 3 : 1;
+      for (let attempt = 0; attempt < attempts; attempt++) {
         if (!active) {
           return;
         }
-        if (counts.messages > 0 || counts.media > 0 || counts.events > 0) {
-          api.markArchiveLive();
-          try {
-            sessionStorage.setItem(ARCHIVE_LIVE_KEY, "1");
-          } catch {
-            // ignore
-          }
-          setPhase("allow");
-          return;
-        }
-        const hadSession = hadLiveSessionMarker();
-        const message = hadSession ? SESSION_ENDED_COPY : NEVER_STARTED_COPY;
         try {
-          sessionStorage.removeItem(ARCHIVE_LIVE_KEY);
+          const counts = await withTimeout(
+            api.counts(),
+            COUNTS_TIMEOUT_MS,
+            "sessionGate.counts",
+          );
+          if (!active) {
+            return;
+          }
+          if (counts.messages > 0 || counts.media > 0 || counts.events > 0) {
+            api.markArchiveLive();
+            try {
+              sessionStorage.setItem(ARCHIVE_LIVE_KEY, "1");
+            } catch {
+              // ignore
+            }
+            setPhase("allow");
+            return;
+          }
         } catch {
-          // ignore
-        }
-        setSessionFlash(message);
-        setRedirectMessage(message);
-        setPhase("redirecting");
-        router.replace("/");
-      })
-      .catch(() => {
-        if (!active) {
+          if (!active) {
+            return;
+          }
+          if (hadSession) {
+            setPhase("stalled");
+            return;
+          }
+          const message = NEVER_STARTED_COPY;
+          setSessionFlash(message);
+          setRedirectMessage(message);
+          setPhase("redirecting");
+          router.replace("/");
           return;
         }
-        // Hung / timed-out worker — do not leave the gate spinning forever.
-        if (hadLiveSessionMarker()) {
-          setPhase("stalled");
-          return;
+        if (attempt + 1 < attempts) {
+          await new Promise((resolve) => {
+            window.setTimeout(resolve, 250 * (attempt + 1));
+          });
         }
-        const message = NEVER_STARTED_COPY;
-        setSessionFlash(message);
-        setRedirectMessage(message);
-        setPhase("redirecting");
-        router.replace("/");
-      });
+      }
+      if (!active) {
+        return;
+      }
+      const message = hadSession ? SESSION_ENDED_COPY : NEVER_STARTED_COPY;
+      try {
+        sessionStorage.removeItem(ARCHIVE_LIVE_KEY);
+      } catch {
+        // ignore
+      }
+      setSessionFlash(message);
+      setRedirectMessage(message);
+      setPhase("redirecting");
+      router.replace("/");
+    };
+
+    void probe();
 
     return () => {
       active = false;

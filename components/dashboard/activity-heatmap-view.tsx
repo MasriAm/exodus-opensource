@@ -10,7 +10,7 @@ import {
   computeActivityFacts,
 } from "@/lib/activity-facts";
 import { localCalendarDayAsUtcKey } from "@/lib/calendar-day";
-import { formatDate, formatNumber, pluralize } from "@/lib/format";
+import { formatDayKey, pluralize } from "@/lib/format";
 import type { MessageHeatmapResult, MessageItem } from "@/lib/db/types";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +28,6 @@ type ActivityHeatmapViewProps = {
   onOpenConversation: (conversation: string, message?: MessageItem) => void;
 };
 
-const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 const MONTH_SHORT = [
   "Jan",
   "Feb",
@@ -186,7 +185,7 @@ export function ActivityHeatmapView({
         <div className="grid gap-3 sm:grid-cols-3">
           <StatCard
             label="Most messages in a day"
-            value={`${formatDate(facts.busiestDay.dayMs)} (${pluralize(facts.busiestDay.messageCount, "msg")})`}
+            value={`${formatDayKey(facts.busiestDay.dayMs)} (${pluralize(facts.busiestDay.messageCount, "msg")})`}
           />
           <StatCard
             label="Fewest messages in a month"
@@ -253,8 +252,8 @@ export function ActivityHeatmapView({
                       <button
                         key={cell.dayMs}
                         type="button"
-                        title={`${formatDate(cell.dayMs)} · ${pluralize(cell.count, "message")}`}
-                        aria-label={`${formatDate(cell.dayMs)}: ${cell.count} messages`}
+                        title={`${formatDayKey(cell.dayMs)} · ${pluralize(cell.count, "message")}`}
+                        aria-label={`${formatDayKey(cell.dayMs)}: ${cell.count} messages`}
                         disabled={cell.count === 0}
                         onClick={() => onSelectDay(cell.dayMs)}
                         className={cn(
@@ -297,7 +296,7 @@ export function ActivityHeatmapView({
 
       {selectedDayMs !== null ? (
         <ArchivePanel
-          title={formatDate(selectedDayMs)}
+          title={formatDayKey(selectedDayMs)}
           subtitle="Messages from this exact day."
         >
           {dayLoading ? (
