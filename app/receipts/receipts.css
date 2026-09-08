@@ -361,6 +361,25 @@
   padding-top: 0.75rem;
 }
 
+/* ------------------------------------------------------------ user text -- */
+
+/*
+ * Archive strings are isolated so a right-to-left message cannot flip the
+ * punctuation of the interface around it. Arabic drops the monospace evidence
+ * face entirely — Courier Prime has no cursive joining, and letter-spacing
+ * pulls the letterforms apart.
+ */
+.rc-user-text {
+  unicode-bidi: isolate;
+}
+
+.rc-user-text[data-arabic="true"] {
+  font-family: var(--rc-ui);
+  letter-spacing: normal;
+  text-transform: none;
+  line-height: 1.7;
+}
+
 /* ----------------------------------------------------------- redaction -- */
 
 /*

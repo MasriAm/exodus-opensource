@@ -4,9 +4,36 @@ import { useMemo } from "react";
 
 import { formatDate } from "@/lib/format";
 import { maskToBlocks, redactText } from "@/lib/drama/redact";
+import { displayConversationLabel } from "@/lib/instagram-labels";
+import { containsArabic } from "@/lib/ui-text";
 import type { EvidenceExhibit, EvidenceItem } from "@/lib/drama/types";
 
 export { maskToBlocks };
+
+/**
+ * Any string that came out of somebody's archive, rendered safely: bidi
+ * isolated so a right-to-left message cannot reorder the interface around it,
+ * and flagged for Arabic so the CSS can drop the monospace evidence face.
+ */
+export function UserString({
+  value,
+  as: Tag = "span",
+  className,
+}: {
+  value: string;
+  as?: "span" | "p" | "div";
+  className?: string;
+}) {
+  return (
+    <Tag
+      dir="auto"
+      data-arabic={containsArabic(value)}
+      className={`rc-user-text ${className ?? ""}`}
+    >
+      <bdi>{value}</bdi>
+    </Tag>
+  );
+}
 
 type RedactableProps = {
   text: string;
@@ -38,16 +65,20 @@ export function Redactable({
       aria-pressed={!hidden}
       aria-label={hidden ? "Reveal this message" : "Hide this message"}
     >
-      <span className={hidden ? "rc-redacted" : undefined} aria-hidden={hidden}>
-        {hidden ? masked : shown}
-      </span>
+      {hidden ? (
+        <span className="rc-redacted" aria-hidden="true">
+          {masked}
+        </span>
+      ) : (
+        <UserString value={shown} />
+      )}
       {hidden ? <span className="sr-only">Message hidden. Tap to reveal.</span> : null}
     </button>
   );
 }
 
 function whoLabel(item: EvidenceItem): string {
-  return item.isSelf ? "you" : item.conversation;
+  return item.isSelf ? "you" : displayConversationLabel(item.conversation);
 }
 
 type ReceiptStripProps = {
@@ -99,7 +130,7 @@ export function ReceiptStrip({
               onToggle={() => onToggle(item.messageId)}
             />
             <span className="rc-quote-meta">
-              <span>{whoLabel(item)}</span>
+              <UserString value={whoLabel(item)} />
               <span aria-hidden="true">·</span>
               <span>{formatDate(item.sentAtMs)}</span>
             </span>

@@ -3,7 +3,11 @@
 import { useCallback, useState } from "react";
 import Link from "next/link";
 
-import { Redactable, ReceiptStrip } from "@/components/receipts/evidence";
+import {
+  Redactable,
+  ReceiptStrip,
+  UserString,
+} from "@/components/receipts/evidence";
 import { formatDate } from "@/lib/format";
 import type { DramaReport } from "@/lib/drama/types";
 
@@ -205,9 +209,10 @@ export function ReceiptsReport({
           {report.lateNightAccomplice ? (
             <p className="rc-body" style={{ marginTop: "2rem" }}>
               Most of that after-midnight typing went to one person:{" "}
-              <span className="rc-flare">
-                {report.lateNightAccomplice.conversation}
-              </span>
+              <UserString
+                className="rc-flare"
+                value={report.lateNightAccomplice.conversation}
+              />
               , {report.lateNightAccomplice.messageCount.toLocaleString()} times.
             </p>
           ) : null}
@@ -229,7 +234,8 @@ export function ReceiptsReport({
                   </p>
                   <div>
                     <h3 className="rc-h3">
-                      {report.situationship.conversation} burned out in{" "}
+                      <UserString value={report.situationship.conversation} />{" "}
+                      burned out in{" "}
                       {report.situationship.spanDays.toLocaleString()} days
                     </h3>
                     <p className="rc-body" style={{ marginTop: "0.5rem" }}>
@@ -268,7 +274,8 @@ export function ReceiptsReport({
                   </p>
                   <div>
                     <h3 className="rc-h3">
-                      {report.slowFade.conversation} just stopped
+                      <UserString value={report.slowFade.conversation} /> just
+                      stopped
                     </h3>
                     <p className="rc-body" style={{ marginTop: "0.5rem" }}>
                       {report.slowFade.messageCount.toLocaleString()} messages, and
@@ -300,7 +307,8 @@ export function ReceiptsReport({
                   </p>
                   <div>
                     <h3 className="rc-h3">
-                      Somebody broke the silence with {report.comeback.conversation}
+                      Somebody broke the silence with{" "}
+                      <UserString value={report.comeback.conversation} />
                     </h3>
                     <p className="rc-body" style={{ marginTop: "0.5rem" }}>
                       {report.comeback.revivedByYou
