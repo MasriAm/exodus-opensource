@@ -606,7 +606,12 @@ async function ping(): Promise<true> {
 }
 
 function heavyQueryTimeout(name: QueryName): number {
-  if (name === "wrappedStats" || name === "personDetail" || name === "footprint") {
+  if (
+    name === "wrappedStats" ||
+    name === "personDetail" ||
+    name === "footprint" ||
+    name === "dramaCorpus"
+  ) {
     return WORKER_HEAVY_TIMEOUT_MS;
   }
   return WORKER_OP_TIMEOUT_MS;

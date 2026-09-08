@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 
 import { ArchiveDropzone } from "@/components/archive-dropzone";
@@ -89,6 +90,21 @@ export function HomeShell({
             onDemo={onDemo}
           />
         </motion.div>
+
+        {!busy ? (
+          <motion.p
+            className="mt-4 font-display text-xs tracking-[0.02em] text-ink/70"
+            {...item(0.2)}
+          >
+            Want the dramatic version?{" "}
+            <Link
+              href="/receipts"
+              className="text-teal underline underline-offset-4"
+            >
+              Receipts reads your Snapchat and Instagram chats back to you
+            </Link>
+          </motion.p>
+        ) : null}
 
         {queuedExports && queuedExports.length > 0 && (
           <motion.div
