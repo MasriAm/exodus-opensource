@@ -21,6 +21,7 @@ export const QUERY_NAMES = [
   "surpriseMemory",
   "filterOptions",
   "messageRank",
+  "dramaCorpus",
 ] as const;
 
 export type QueryName = (typeof QUERY_NAMES)[number];
@@ -475,6 +476,34 @@ export interface WrappedStatsResult {
   oldestImages: WrappedFirstImage[];
 }
 
+export interface DramaCorpusParams {
+  /** Hard cap on rows pulled into memory for the Receipts engine. */
+  limit?: number;
+  filter?: ArchiveFilter;
+}
+
+export interface DramaCorpusMessage {
+  rowId: number;
+  platform: string;
+  conversation: string;
+  sender: string;
+  sentAtMs: number;
+  text: string;
+}
+
+export interface DramaCorpusResult {
+  messages: DramaCorpusMessage[];
+  /** Text messages in the archive before the cap was applied. */
+  totalMessages: number;
+  truncated: boolean;
+  /** Sender appearing in the most conversations — almost always the owner. */
+  selfSender: string | null;
+  /** Owner name recorded by the parser, when the export carried one. */
+  ownerName: string | null;
+  /** Snapchat-style snap counts, which never appear as messages. */
+  snapCount: number;
+}
+
 export interface ExportFormatMetadata {
   format: ExportFormat;
   mimeType: string;
@@ -512,6 +541,7 @@ export interface QueryParamsByName {
   surpriseMemory: { filter?: ConversationListParams["filter"] } | undefined;
   filterOptions: undefined;
   messageRank: MessageRankParams;
+  dramaCorpus: DramaCorpusParams | undefined;
 }
 
 export interface QueryResultByName {
@@ -533,6 +563,7 @@ export interface QueryResultByName {
   surpriseMemory: SurpriseMemoryResult;
   filterOptions: FilterOptionsResult;
   messageRank: MessageRankResult;
+  dramaCorpus: DramaCorpusResult;
 }
 
 export type QueryArgs<Name extends QueryName> =

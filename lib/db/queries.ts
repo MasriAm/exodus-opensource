@@ -9,6 +9,7 @@ import { messagesWhere, mediaWhere, mergeFilters } from "./archive-filter";
 import {
   dayMessages,
   deskHome,
+  dramaCorpus,
   filterOptions,
   footprint,
   messageHeatmap,
@@ -44,6 +45,7 @@ import type {
   ConversationListResult,
   CountsResult,
   DayMessagesParams,
+  DramaCorpusParams,
   ExportMetadataResult,
   ExportTable,
   MediaKind,
@@ -604,6 +606,11 @@ export async function executeNamedQuery<Name extends QueryName>(
       )) as QueryResultByName[Name];
     case "filterOptions":
       return (await filterOptions(connection)) as QueryResultByName[Name];
+    case "dramaCorpus":
+      return (await dramaCorpus(
+        connection,
+        params as DramaCorpusParams | undefined,
+      )) as QueryResultByName[Name];
   }
 }
 

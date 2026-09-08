@@ -1,0 +1,937 @@
+/**
+ * Receipts — its own visual world, deliberately unlike the paper desk.
+ *
+ * Written as plain scoped CSS rather than utilities because most of what makes
+ * this page work are custom objects (perforated receipt strips, redaction
+ * blocks, the sticker verdict) that read far better as named components than as
+ * forty-class strings. Everything is scoped under .rc so it cannot leak into
+ * the archive UI.
+ */
+
+@import "@fontsource-variable/bricolage-grotesque";
+@import "@fontsource-variable/instrument-sans";
+
+.rc {
+  /* The ground is a phone screen at 3am: warm, purple, never neutral black. */
+  --rc-ground: #17101f;
+  --rc-ground-deep: #0f0a16;
+  --rc-raised: #241934;
+  --rc-edge: #382a4d;
+
+  /* Receipt paper — the only warm surface, and only where paper is literal. */
+  --rc-paper: #f7f1e4;
+  --rc-paper-ink: #241a15;
+
+  /* Instagram's gradient pushed hotter; Snapchat's yellow pulled off pure. */
+  --rc-flare: #ff2e7e;
+  --rc-signal: #ffe14d;
+  /* "Close friends" green — reserved for the privacy story, nothing else. */
+  --rc-mint: #6be3b8;
+
+  --rc-text: #f4eeff;
+  --rc-haze: #a795c7;
+  --rc-faint: #6d5c8a;
+
+  --rc-display: "Bricolage Grotesque Variable", "Bricolage Grotesque",
+    ui-sans-serif, system-ui, sans-serif;
+  --rc-ui: "Instrument Sans Variable", "Instrument Sans", ui-sans-serif,
+    system-ui, sans-serif;
+  --rc-evidence: "Courier Prime", ui-monospace, "SF Mono", monospace;
+
+  --rc-gutter: clamp(1.25rem, 5vw, 4.5rem);
+  --rc-measure: 62ch;
+
+  background: var(--rc-ground);
+  color: var(--rc-text);
+  font-family: var(--rc-ui);
+  font-size: 16px;
+  line-height: 1.55;
+  min-height: 100dvh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Film grain, borrowed from the parent product so the two feel related. */
+.rc::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.055;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.rc > * {
+  position: relative;
+  z-index: 1;
+}
+
+.rc ::selection {
+  background: var(--rc-flare);
+  color: #fff;
+}
+
+.rc :focus-visible {
+  outline: 2px solid var(--rc-signal);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* ---------------------------------------------------------------- shell -- */
+
+.rc-shell {
+  margin-inline: auto;
+  max-width: 78rem;
+  padding-inline: var(--rc-gutter);
+}
+
+.rc-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-block: 1.15rem;
+  flex-wrap: wrap;
+}
+
+.rc-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-family: var(--rc-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  color: var(--rc-text);
+  text-decoration: none;
+}
+
+.rc-wordmark span {
+  color: var(--rc-faint);
+  font-weight: 500;
+}
+
+.rc-private {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--rc-mint);
+  border: 1px solid color-mix(in srgb, var(--rc-mint) 35%, transparent);
+  background: color-mix(in srgb, var(--rc-mint) 8%, transparent);
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+}
+
+.rc-private::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rc-mint);
+}
+
+/* ----------------------------------------------------------------- type -- */
+
+.rc-h1 {
+  font-family: var(--rc-display);
+  font-weight: 800;
+  font-size: clamp(2.6rem, 7.4vw, 5.4rem);
+  line-height: 0.94;
+  letter-spacing: -0.045em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.rc-h2 {
+  font-family: var(--rc-display);
+  font-weight: 700;
+  font-size: clamp(1.7rem, 3.6vw, 2.7rem);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  margin: 0;
+}
+
+.rc-h3 {
+  font-family: var(--rc-display);
+  font-weight: 700;
+  font-size: 1.22rem;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.rc-lede {
+  font-size: clamp(1.02rem, 1.5vw, 1.2rem);
+  line-height: 1.55;
+  color: var(--rc-haze);
+  max-width: 46ch;
+  margin: 1.4rem 0 0;
+}
+
+.rc-body {
+  color: var(--rc-haze);
+  max-width: var(--rc-measure);
+  margin: 0;
+}
+
+.rc-flare {
+  color: var(--rc-flare);
+}
+
+/* --------------------------------------------------------------- buttons -- */
+
+.rc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  font-family: var(--rc-ui);
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 0.85rem 1.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+
+.rc-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.rc-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.rc-btn-primary {
+  background: var(--rc-signal);
+  color: #1a1206;
+}
+
+.rc-btn-primary:hover:not(:disabled) {
+  background: #fff0a1;
+}
+
+.rc-btn-ghost {
+  background: transparent;
+  color: var(--rc-text);
+  border-color: var(--rc-edge);
+}
+
+.rc-btn-ghost:hover:not(:disabled) {
+  border-color: var(--rc-haze);
+  background: color-mix(in srgb, var(--rc-raised) 60%, transparent);
+}
+
+.rc-link {
+  color: var(--rc-text);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: var(--rc-faint);
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.rc-link:hover {
+  text-decoration-color: var(--rc-flare);
+}
+
+/* ----------------------------------------------------------------- hero -- */
+
+.rc-hero {
+  display: grid;
+  gap: clamp(2.5rem, 6vw, 4.5rem);
+  grid-template-columns: 1fr;
+  align-items: center;
+  padding-block: clamp(1.5rem, 4vw, 2.75rem) clamp(2rem, 5vw, 3.5rem);
+}
+
+@media (min-width: 62rem) {
+  .rc-hero {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  }
+}
+
+.rc-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 2rem;
+}
+
+.rc-hero-note {
+  margin-top: 1.1rem;
+  font-size: 0.87rem;
+  color: var(--rc-faint);
+  max-width: 42ch;
+}
+
+/* ------------------------------------------------------------ screenshot -- */
+
+.rc-phone {
+  --rc-phone-tilt: -2.2deg;
+  background: linear-gradient(
+    170deg,
+    var(--rc-raised),
+    var(--rc-ground-deep) 70%
+  );
+  border: 1px solid var(--rc-edge);
+  border-radius: 26px;
+  padding: 1rem 1rem 1.35rem;
+  box-shadow:
+    0 40px 70px -30px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  transform: rotate(var(--rc-phone-tilt));
+  max-width: 26rem;
+  margin-inline: auto;
+  width: 100%;
+}
+
+.rc-phone-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--rc-faint);
+  padding: 0.1rem 0.4rem 0.9rem;
+  letter-spacing: 0.01em;
+}
+
+.rc-phone-who {
+  color: var(--rc-text);
+  font-weight: 600;
+}
+
+.rc-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-height: 17rem;
+  justify-content: flex-end;
+}
+
+.rc-bubble {
+  max-width: 84%;
+  padding: 0.6rem 0.85rem;
+  border-radius: 18px;
+  font-size: 0.92rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.rc-bubble-them {
+  align-self: flex-start;
+  background: var(--rc-raised);
+  border: 1px solid var(--rc-edge);
+  border-bottom-left-radius: 5px;
+}
+
+.rc-bubble-you {
+  align-self: flex-end;
+  background: var(--rc-flare);
+  color: #fff;
+  border-bottom-right-radius: 5px;
+}
+
+.rc-bubble-time {
+  display: block;
+  font-size: 0.68rem;
+  opacity: 0.6;
+  margin-top: 0.25rem;
+}
+
+/* The screenshot banner Snapchat shows when someone caps your chat. */
+.rc-capped {
+  margin-top: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.74rem;
+  color: var(--rc-signal);
+  border-top: 1px dashed color-mix(in srgb, var(--rc-signal) 30%, transparent);
+  padding-top: 0.75rem;
+}
+
+/* ----------------------------------------------------------- redaction -- */
+
+/*
+ * The block glyphs do the redacting on their own. Painting a background behind
+ * them fills the word gaps too, which reads as a loading skeleton on the dark
+ * surfaces rather than as a censored line.
+ */
+.rc-redacted {
+  opacity: 0.78;
+  letter-spacing: -0.02em;
+  transition: opacity 200ms ease;
+}
+
+.rc-reveal:hover .rc-redacted {
+  opacity: 1;
+}
+
+.rc-reveal {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+}
+
+/* --------------------------------------------------------------- strips -- */
+
+.rc-strip-rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(16.5rem, 19rem);
+  gap: 1.1rem;
+  overflow-x: auto;
+  padding: 0.5rem 0 1.75rem;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rc-edge) transparent;
+}
+
+.rc-strip-rail > * {
+  scroll-snap-align: start;
+}
+
+.rc-strip {
+  --r: 8px;
+  background: var(--rc-paper);
+  color: var(--rc-paper-ink);
+  font-family: var(--rc-evidence);
+  padding: 1.6rem 1.1rem;
+  /* Torn-off till roll: scallops top and bottom, intersected. */
+  -webkit-mask:
+    radial-gradient(var(--r) at 50% 0, #0000 98%, #000) 50% 0 /
+      calc(2 * var(--r)) 100% repeat-x,
+    radial-gradient(var(--r) at 50% 100%, #0000 98%, #000) 50% 100% /
+      calc(2 * var(--r)) 100% repeat-x;
+  -webkit-mask-composite: source-in;
+  mask:
+    radial-gradient(var(--r) at 50% 0, #0000 98%, #000) 50% 0 /
+      calc(2 * var(--r)) 100% repeat-x,
+    radial-gradient(var(--r) at 50% 100%, #0000 98%, #000) 50% 100% /
+      calc(2 * var(--r)) 100% repeat-x;
+  mask-composite: intersect;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  height: 100%;
+}
+
+.rc-strip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px dashed color-mix(in srgb, var(--rc-paper-ink) 30%, transparent);
+  padding-bottom: 0.65rem;
+}
+
+.rc-strip-title {
+  font-family: var(--rc-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.015em;
+}
+
+.rc-strip-count {
+  font-size: 0.72rem;
+  color: color-mix(in srgb, var(--rc-paper-ink) 62%, transparent);
+  white-space: nowrap;
+}
+
+.rc-quote {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.rc-quote-meta {
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--rc-paper-ink) 58%, transparent);
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+}
+
+.rc-strip-foot {
+  margin-top: auto;
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--rc-paper-ink) 55%, transparent);
+  border-top: 1px dashed color-mix(in srgb, var(--rc-paper-ink) 30%, transparent);
+  padding-top: 0.65rem;
+}
+
+/* --------------------------------------------------------------- blocks -- */
+
+.rc-section {
+  padding-block: clamp(2.25rem, 4vw, 3.25rem);
+  border-top: 1px solid color-mix(in srgb, var(--rc-edge) 70%, transparent);
+}
+
+.rc-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.75rem;
+}
+
+/* Headings break where the writing wants them to, not at the container edge. */
+.rc-section-head .rc-h2 {
+  max-width: 26ch;
+}
+
+.rc-section-head .rc-body {
+  max-width: 54ch;
+}
+
+/* Asymmetric on purpose — an even grid of identical cards is the default. */
+.rc-finds {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 46rem) {
+  .rc-finds {
+    grid-template-columns: repeat(6, 1fr);
+  }
+  .rc-find:nth-child(1) {
+    grid-column: span 4;
+  }
+  .rc-find:nth-child(2) {
+    grid-column: span 2;
+  }
+  .rc-find:nth-child(3) {
+    grid-column: span 2;
+  }
+  .rc-find:nth-child(4) {
+    grid-column: span 4;
+  }
+  .rc-find:nth-child(5) {
+    grid-column: span 3;
+  }
+  .rc-find:nth-child(6) {
+    grid-column: span 3;
+  }
+}
+
+.rc-find {
+  border: 1px solid var(--rc-edge);
+  border-radius: 14px;
+  padding: 1.35rem;
+  background: color-mix(in srgb, var(--rc-raised) 55%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rc-find p {
+  margin: 0;
+  color: var(--rc-haze);
+  font-size: 0.94rem;
+}
+
+.rc-find-mark {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+/* --------------------------------------------------------------- privacy -- */
+
+.rc-privacy {
+  border: 1px solid color-mix(in srgb, var(--rc-mint) 28%, transparent);
+  background:
+    radial-gradient(
+      120% 100% at 0% 0%,
+      color-mix(in srgb, var(--rc-mint) 9%, transparent),
+      transparent 60%
+    ),
+    var(--rc-ground-deep);
+  border-radius: 18px;
+  padding: clamp(1.5rem, 4vw, 2.6rem);
+  display: grid;
+  gap: 2rem;
+}
+
+@media (min-width: 54rem) {
+  .rc-privacy {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    align-items: center;
+    gap: clamp(2rem, 5vw, 3.5rem);
+  }
+}
+
+.rc-privacy h2 {
+  color: var(--rc-mint);
+}
+
+.rc-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+  counter-reset: rc-step;
+}
+
+.rc-steps li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.85rem;
+  align-items: baseline;
+  color: var(--rc-haze);
+  font-size: 0.94rem;
+}
+
+.rc-steps li::before {
+  counter-increment: rc-step;
+  content: counter(rc-step);
+  font-family: var(--rc-evidence);
+  font-size: 0.78rem;
+  color: var(--rc-mint);
+  border: 1px solid color-mix(in srgb, var(--rc-mint) 35%, transparent);
+  border-radius: 50%;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+}
+
+/* ------------------------------------------------------------- dropzone -- */
+
+.rc-drop {
+  border: 1.5px dashed color-mix(in srgb, var(--rc-haze) 45%, transparent);
+  border-radius: 18px;
+  padding: clamp(1.75rem, 4vw, 2.6rem) clamp(1.25rem, 3vw, 2rem);
+  background: var(--rc-raised);
+  text-align: center;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.rc-drop[data-active="true"] {
+  border-color: var(--rc-signal);
+  background: color-mix(in srgb, var(--rc-signal) 8%, transparent);
+}
+
+.rc-drop-hint {
+  color: var(--rc-haze);
+  font-size: 0.95rem;
+  margin: 0.6rem 0 0;
+}
+
+.rc-queue {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1.1rem;
+  text-align: left;
+}
+
+.rc-queue-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid var(--rc-edge);
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  background: var(--rc-ground-deep);
+  font-size: 0.9rem;
+}
+
+.rc-queue-row small {
+  display: block;
+  color: var(--rc-faint);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.rc-error {
+  color: #ff9db9;
+  font-size: 0.9rem;
+  margin: 1rem 0 0;
+}
+
+/* ----------------------------------------------------------------- tabs -- */
+
+.rc-tabs {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.4rem;
+}
+
+.rc-tab {
+  border: 1px solid var(--rc-edge);
+  background: transparent;
+  color: var(--rc-haze);
+  border-radius: 999px;
+  padding: 0.4rem 0.95rem;
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.rc-tab[data-selected="true"] {
+  background: var(--rc-text);
+  color: var(--rc-ground);
+  border-color: var(--rc-text);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------- report -- */
+
+.rc-cover {
+  padding-block: clamp(2.5rem, 7vw, 5rem) clamp(2rem, 5vw, 3.5rem);
+}
+
+.rc-cover-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.75rem;
+  margin-top: 1.75rem;
+  font-size: 0.88rem;
+  color: var(--rc-haze);
+}
+
+.rc-cover-meta b {
+  color: var(--rc-text);
+  font-weight: 600;
+}
+
+/* The share moment: one sticker, slightly off-axis, loud on purpose. */
+.rc-sticker {
+  background: linear-gradient(155deg, var(--rc-flare), #b81f6b);
+  color: #fff;
+  border-radius: 20px;
+  padding: clamp(1.6rem, 4vw, 2.6rem);
+  transform: rotate(-1.4deg);
+  box-shadow: 0 30px 60px -34px var(--rc-flare);
+  max-width: 44rem;
+}
+
+.rc-sticker-kicker {
+  font-size: 0.85rem;
+  opacity: 0.82;
+  margin: 0;
+}
+
+.rc-sticker-title {
+  font-family: var(--rc-display);
+  font-weight: 800;
+  font-size: clamp(2.2rem, 6vw, 3.6rem);
+  line-height: 0.96;
+  letter-spacing: -0.04em;
+  margin: 0.5rem 0 0;
+}
+
+.rc-sticker-line {
+  margin: 1rem 0 0;
+  font-size: 1.05rem;
+  line-height: 1.5;
+  max-width: 34ch;
+}
+
+.rc-sticker-evidence {
+  font-family: var(--rc-evidence);
+  font-size: 0.82rem;
+  margin: 1.4rem 0 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.28);
+  opacity: 0.92;
+}
+
+.rc-runners {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-top: 1.6rem;
+  font-size: 0.9rem;
+  color: var(--rc-haze);
+}
+
+/* Bare numbers on hairlines — no card, no shadow, no chrome. */
+.rc-stats {
+  display: grid;
+  gap: 0;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 40rem) {
+  .rc-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 64rem) {
+  .rc-stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.rc-stat {
+  border-top: 1px solid var(--rc-edge);
+  padding: 1.4rem 1.5rem 1.4rem 0;
+}
+
+.rc-stat-value {
+  font-family: var(--rc-display);
+  font-weight: 700;
+  font-size: clamp(2rem, 4.4vw, 2.9rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--rc-signal);
+}
+
+.rc-stat-label {
+  margin: 0.55rem 0 0.2rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.rc-stat-caption {
+  margin: 0;
+  color: var(--rc-haze);
+  font-size: 0.88rem;
+  max-width: 34ch;
+}
+
+.rc-story {
+  display: grid;
+  gap: 1.25rem;
+  border: 1px solid var(--rc-edge);
+  border-radius: 16px;
+  padding: clamp(1.35rem, 3.5vw, 2.1rem);
+  background: color-mix(in srgb, var(--rc-raised) 45%, transparent);
+}
+
+.rc-stories {
+  display: grid;
+  gap: 1.1rem;
+}
+
+@media (min-width: 54rem) {
+  .rc-stories {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* An odd third card spans the row instead of hanging off the grid. */
+  .rc-stories > .rc-story:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+
+.rc-story-figure {
+  font-family: var(--rc-display);
+  font-weight: 700;
+  font-size: 2rem;
+  letter-spacing: -0.03em;
+  color: var(--rc-flare);
+  line-height: 1;
+}
+
+.rc-pull {
+  font-family: var(--rc-evidence);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  background: var(--rc-ground-deep);
+  border-left: 2px solid var(--rc-flare);
+  padding: 0.85rem 1rem;
+  border-radius: 0 8px 8px 0;
+  margin: 0;
+}
+
+.rc-words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.rc-word {
+  border: 1px solid var(--rc-edge);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.9rem;
+  color: var(--rc-text);
+}
+
+.rc-word b {
+  color: var(--rc-faint);
+  font-weight: 500;
+  margin-left: 0.35rem;
+}
+
+.rc-foot {
+  border-top: 1px solid var(--rc-edge);
+  padding-block: 2.5rem 3.5rem;
+  color: var(--rc-faint);
+  font-size: 0.87rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.75rem;
+  align-items: center;
+}
+
+.rc-empty {
+  border: 1px dashed var(--rc-edge);
+  border-radius: 14px;
+  padding: 2rem;
+  color: var(--rc-haze);
+  text-align: center;
+}
+
+/* --------------------------------------------------------------- motion -- */
+
+/* One orchestrated page-load beat: the hero screenshot resolving. */
+@keyframes rc-lift {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rc-enter {
+  animation: rc-lift 520ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc *,
+  .rc *::before,
+  .rc *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .rc-phone {
+    transform: none;
+  }
+  .rc-sticker {
+    transform: none;
+  }
+}

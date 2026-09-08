@@ -29,6 +29,8 @@ import type {
   DeskHomeResult,
   DayMessagesParams,
   DayMessagesResult,
+  DramaCorpusParams,
+  DramaCorpusResult,
   FootprintCall,
   FootprintFollowEvent,
   FootprintPersonalInfo,
@@ -1498,5 +1500,113 @@ export async function filterOptions(
     activeToMs: readNullableNumber(range, "active_to_ms"),
     owners,
     globalArchiveOwnerName,
+  };
+}
+
+/**
+ * Pull the text messages the Receipts engine reads.
+ *
+ * System noise (unsent notices, "liked a message", attachment stubs) is filtered
+ * in SQL rather than in the engine, because a 200k-row archive should never
+ * cross the worker boundary just to be thrown away. The cap keeps a very large
+ * export from pinning the tab; `truncated` lets the report say so out loud.
+ */
+export async function dramaCorpus(
+  connection: AsyncDuckDBConnection,
+  rawParams?: DramaCorpusParams,
+): Promise<DramaCorpusResult> {
+  const params = optionalRecord(rawParams, "dramaCorpus parameters");
+  const filter = optionalFilter(params);
+  const msg = messagesWhere(filter);
+  const limit = boundedInteger(
+    typeof params.limit === "number" ? params.limit : undefined,
+    60_000,
+    100,
+    200_000,
+  );
+
+  const textClause = `
+    ${msg.clause}
+    AND text IS NOT NULL
+    AND length(trim(text)) >= 2
+    AND lower(trim(text)) NOT IN (
+      'this message was unsent',
+      'this message was deleted',
+      'liked a message'
+    )
+  `;
+
+  const totalRow = await preparedRows(
+    connection,
+    `SELECT CAST(COUNT(*) AS DOUBLE) AS total FROM messages WHERE ${textClause}`,
+    msg.params,
+  );
+  const totalMessages =
+    totalRow.length > 0 ? readNumber(totalRow[0], "total") : 0;
+
+  // Newest-first for the cap, so a truncated read keeps the recent era intact.
+  const rows = await preparedRows(
+    connection,
+    `
+      SELECT
+        CAST(rowid AS DOUBLE) AS row_id,
+        platform,
+        conversation,
+        sender,
+        epoch(sent_at) * 1000.0 AS sent_at_ms,
+        text
+      FROM messages
+      WHERE ${textClause}
+      ORDER BY sent_at DESC
+      LIMIT ${limit}
+    `,
+    msg.params,
+  );
+
+  const messages = rows
+    .map((row) => ({
+      rowId: readNumber(row, "row_id"),
+      platform: readString(row, "platform"),
+      conversation: readString(row, "conversation"),
+      sender: readString(row, "sender"),
+      sentAtMs: readNumber(row, "sent_at_ms"),
+      text: readString(row, "text"),
+    }))
+    .sort((left, right) => left.sentAtMs - right.sentAtMs);
+
+  const selfRows = await queryRows(
+    connection,
+    `
+      SELECT sender
+      FROM messages
+      GROUP BY sender
+      ORDER BY COUNT(DISTINCT conversation) DESC, COUNT(*) DESC, sender ASC
+      LIMIT 1
+    `,
+  );
+
+  const ownerRows = await queryRows(
+    connection,
+    `
+      SELECT json_extract_string(payload, '$.name') AS name
+      FROM events
+      WHERE kind = 'archive_owner'
+        AND json_extract_string(payload, '$.name') IS NOT NULL
+      LIMIT 1
+    `,
+  );
+
+  const snapRows = await queryRows(
+    connection,
+    "SELECT CAST(COUNT(*) AS DOUBLE) AS total FROM events WHERE kind = 'snap'",
+  );
+
+  return {
+    messages,
+    totalMessages,
+    truncated: totalMessages > messages.length,
+    selfSender: selfRows.length > 0 ? readString(selfRows[0], "sender") : null,
+    ownerName: ownerRows.length > 0 ? readNullableString(ownerRows[0], "name") : null,
+    snapCount: snapRows.length > 0 ? readNumber(snapRows[0], "total") : 0,
   };
 }

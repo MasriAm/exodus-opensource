@@ -33,7 +33,9 @@ export function ArchiveDropzone({
   const [dragActive, setDragActive] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
-  const [guidePlatform, setGuidePlatform] = useState<"instagram" | "whatsapp" | "facebook">("instagram");
+  const [guidePlatform, setGuidePlatform] = useState<
+    "instagram" | "snapchat" | "whatsapp" | "facebook"
+  >("instagram");
 
   const submitFile = (file: File | undefined) => {
     if (!file) {
@@ -143,7 +145,7 @@ export function ArchiveDropzone({
               </button>
             </div>
             <div className="mt-5 flex gap-2 border-b border-ink/10 pb-2">
-              {(["instagram", "whatsapp", "facebook"] as const).map((platform) => (
+              {(["instagram", "snapchat", "whatsapp", "facebook"] as const).map((platform) => (
                 <button
                   key={platform}
                   type="button"
@@ -179,6 +181,28 @@ export function ArchiveDropzone({
                     <span className="font-display text-xs font-bold text-teal">STEP 3</span>
                     <p className="mt-1">
                       Check email for Instagram&apos;s download link, then drop the .zip here.
+                    </p>
+                  </li>
+                </>
+              )}
+              {guidePlatform === "snapchat" && (
+                <>
+                  <li>
+                    <span className="font-display text-xs font-bold text-teal">STEP 1</span>
+                    <p className="mt-1">
+                      Snapchat app → Profile → the gear icon → <Mark>My Data</Mark>
+                    </p>
+                  </li>
+                  <li>
+                    <span className="font-display text-xs font-bold text-teal">STEP 2</span>
+                    <p className="mt-1">
+                      Submit a request for all date ranges. Leave Memories out unless you want a much larger file.
+                    </p>
+                  </li>
+                  <li>
+                    <span className="font-display text-xs font-bold text-teal">STEP 3</span>
+                    <p className="mt-1">
+                      Snapchat emails a download link, usually the same day. Only chats someone saved are included.
                     </p>
                   </li>
                 </>

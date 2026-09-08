@@ -363,6 +363,7 @@ const DEFAULT_PARAMS: Record<QueryName, unknown> = {
     rowId: 1,
     sentAtMs: localMs(2024, 0, 2, 0, 20),
   },
+  dramaCorpus: { limit: 500 },
 };
 
 /** Binds a parameter for every filter clause — catches ordering mistakes. */
