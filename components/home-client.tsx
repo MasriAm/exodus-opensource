@@ -187,7 +187,7 @@ export function HomeClient() {
       setError(null);
 
       const accepted: { file: File; platform: string }[] = [];
-      const unrecognized: string[] = [];
+      const failures: { name: string; reason: string }[] = [];
 
       // Identified one at a time on purpose: a split export is nine separate
       // archives, and one unreadable part should not discard the other eight.
@@ -197,11 +197,20 @@ export function HomeClient() {
           if (platform) {
             accepted.push({ file, platform });
           } else {
-            unrecognized.push(file.name);
+            failures.push({
+              name: file.name,
+              reason: "not a export we recognize",
+            });
           }
         } catch (err: unknown) {
-          console.error(`Format detection failed for ${file.name}`, err);
-          unrecognized.push(file.name);
+          console.error(`Could not read ${file.name}`, err);
+          failures.push({
+            name: file.name,
+            // The worker knows why — a truncated download reads very
+            // differently from an unknown format, and saying which saves
+            // somebody re-requesting an export that was fine.
+            reason: friendlyError(err, "could not be opened"),
+          });
         }
       }
 
@@ -218,13 +227,14 @@ export function HomeClient() {
         });
       }
 
-      if (unrecognized.length > 0) {
+      if (failures.length > 0) {
+        const detail = failures
+          .map((failure) => `${failure.name} — ${failure.reason}`)
+          .join("; ");
         setError(
           accepted.length > 0
-            ? `Added ${accepted.length} of ${files.length}. Could not read: ${unrecognized.join(", ")}.`
-            : unrecognized.length === 1
-              ? "That archive could not be recognized. Make sure it is the .zip your export downloaded as."
-              : "None of those archives could be recognized. Make sure they are the .zip files your export downloaded as.",
+            ? `Added ${accepted.length} of ${files.length}. ${detail}`
+            : detail,
         );
       }
 
