@@ -394,3 +394,114 @@
     transition: none !important;
   }
 }
+
+/* ------------------------------------------------------------- platform -- */
+
+/*
+ * Per-platform capsule skins.
+ *
+ * The deck and the desk already draw every surface, border and shadow from the
+ * tokens below, so a platform theme is a token swap rather than a second set of
+ * components. Only these variables are redefined — nothing here restyles an
+ * element directly, which is what keeps the neo-brutalist structure intact
+ * across all five skins.
+ *
+ * Set by `data-wrapped-theme` on the deck / desk wrapper.
+ */
+
+/* Instagram — the gradient, on the deep plum of the app in dark mode. */
+[data-wrapped-theme="instagram"] {
+  --paper: #150a1e;
+  --cream: #22112f;
+  --receipt: #2b1740;
+  --ink: #fbf5ff;
+  --body: #d6c2e6;
+  --rail: #0d0614;
+  --teal: #e1306c;
+  --taupe: #8b6ba8;
+  --slate: #b39ccb;
+  --coral: #f77737;
+
+  --teal-wash: color-mix(in srgb, var(--teal) 20%, transparent);
+  --heat-0: #1d0f29;
+  --heat-1: #4a2350;
+  --heat-2: #833ab4;
+  --heat-3: #c13584;
+  --heat-4: #f77737;
+
+  --shadow-panel: 4px 4px 0 color-mix(in srgb, var(--teal) 55%, transparent);
+  --shadow-press: 8px 8px 0 color-mix(in srgb, var(--teal) 55%, transparent);
+  --shadow-soft: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+/* Snapchat — the yellow is the whole identity, black ink straight on top. */
+[data-wrapped-theme="snapchat"] {
+  --paper: #fffc00;
+  --cream: #fffde3;
+  --receipt: #ffffff;
+  --ink: #0b0b0b;
+  --body: #2c2c2c;
+  --rail: #0b0b0b;
+  --teal: #0b0b0b;
+  --taupe: #b7b400;
+  --slate: #4a4a00;
+  --coral: #ff2e63;
+
+  --teal-wash: color-mix(in srgb, var(--ink) 10%, transparent);
+  --heat-0: #fffc00;
+  --heat-1: #ffe600;
+  --heat-2: #d9c400;
+  --heat-3: #8a7d00;
+  --heat-4: #0b0b0b;
+}
+
+/* Facebook — the product chrome: cool grey ground, one confident blue. */
+[data-wrapped-theme="facebook"] {
+  --paper: #eef1f6;
+  --cream: #ffffff;
+  --receipt: #f8fafc;
+  --ink: #12161c;
+  --body: #3a4453;
+  --rail: #0f1a2b;
+  --teal: #1877f2;
+  --taupe: #8a97ab;
+  --slate: #4a5568;
+  --coral: #e41e3f;
+
+  --teal-wash: color-mix(in srgb, var(--teal) 12%, transparent);
+  --heat-0: #eef1f6;
+  --heat-1: #cfe0fb;
+  --heat-2: #8fb8f6;
+  --heat-3: #4a8cf0;
+  --heat-4: #0b4fa8;
+}
+
+/* WhatsApp — the chat wallpaper, with the green kept for accents only. */
+[data-wrapped-theme="whatsapp"] {
+  --paper: #ece5dd;
+  --cream: #ffffff;
+  --receipt: #f7f5f1;
+  --ink: #101b20;
+  --body: #3b4a52;
+  --rail: #075e54;
+  --teal: #128c7e;
+  --taupe: #a8b3ad;
+  --slate: #54656f;
+  --coral: #e5533d;
+
+  --teal-wash: color-mix(in srgb, var(--teal) 14%, transparent);
+  --heat-0: #ece5dd;
+  --heat-1: #cfe9d6;
+  --heat-2: #93d3a8;
+  --heat-3: #40a97a;
+  --heat-4: #075e54;
+}
+
+/*
+ * The grain is tuned for paper. Left alone on the dark skin it reads as TV
+ * static rather than film, so it drops to a whisper and stops lightening.
+ */
+[data-wrapped-theme="instagram"] .film-grain-overlay,
+[data-wrapped-theme="instagram"] .sidebar-grain {
+  opacity: 0.035;
+}

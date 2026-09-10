@@ -12,7 +12,9 @@ import {
   containsPathSequence,
   entryBasename,
   entryPathSegments,
+  hasFacebookMarker,
   hasInstagramMarker,
+  hasSharedMetaMarker,
   resolveReferencedPath,
 } from "../paths";
 import type { DataParser } from "../types";
@@ -853,7 +855,16 @@ export const instagramParser: DataParser = {
   displayName: "Instagram",
 
   detect(entryPaths) {
-    return hasInstagramMarker(entryPaths);
+    if (hasInstagramMarker(entryPaths)) {
+      return true;
+    }
+    if (hasFacebookMarker(entryPaths)) {
+      return false;
+    }
+    // A Meta export of account-level categories only names neither product.
+    // Every sub-parser here tolerates a missing category, so claiming it beats
+    // telling somebody their real export is unrecognized.
+    return hasSharedMetaMarker(entryPaths);
   },
 
   async parse(entries, emit, progress) {

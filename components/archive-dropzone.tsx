@@ -168,19 +168,19 @@ export function ArchiveDropzone({
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 1</span>
                     <p className="mt-1">
-                      Instagram app → Settings → Accounts Center → Your information and permissions → Download your information
+                      Instagram → Settings → Accounts Center → Your information and permissions → <Mark>Export your information</Mark> → Create export
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 2</span>
                     <p className="mt-1">
-                      Request a download. Choose <Mark>JSON</Mark>, not HTML. Range: All time.
+                      Download to device. Choose <Mark>JSON</Mark>, not HTML, and set the range to All time. Ticking only Messages is fine and much faster.
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 3</span>
                     <p className="mt-1">
-                      Check email for Instagram&apos;s download link, then drop the .zip here.
+                      Instagram emails a link within a few hours. It expires after 4 days. Drop the .zip here — add every part if it arrives split.
                     </p>
                   </li>
                 </>
@@ -190,19 +190,19 @@ export function ArchiveDropzone({
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 1</span>
                     <p className="mt-1">
-                      Snapchat app → Profile → the gear icon → <Mark>My Data</Mark>
+                      Snapchat → Profile → the gear icon → <Mark>My Data</Mark>, or sign in at accounts.snapchat.com
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 2</span>
                     <p className="mt-1">
-                      Submit a request for all date ranges. Leave Memories out unless you want a much larger file.
+                      Pick your categories and turn the date range off to get everything. Leave <Mark>Export your Memories</Mark> off unless you want a much larger file.
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 3</span>
                     <p className="mt-1">
-                      Snapchat emails a download link, usually the same day. Only chats someone saved are included.
+                      Snapchat emails a link, usually within a day. Only chats someone saved in the conversation are included — everything else was deleted on open.
                     </p>
                   </li>
                 </>
@@ -212,19 +212,19 @@ export function ArchiveDropzone({
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 1</span>
                     <p className="mt-1">
-                      Open WhatsApp → Settings → Chats → Export Chat
+                      Open a chat → tap the contact name → <Mark>Export chat</Mark>
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 2</span>
                     <p className="mt-1">
-                      Select a chat, choose <Mark>Attach Media</Mark>, and save the generated .zip file.
+                      Choose Without media unless you specifically want the photos, then save the .zip.
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 3</span>
                     <p className="mt-1">
-                      Repeat for other chats if desired, and drop the .zip(s) here.
+                      WhatsApp exports one conversation at a time, so repeat for each chat and drop them all here together.
                     </p>
                   </li>
                 </>
@@ -234,19 +234,19 @@ export function ArchiveDropzone({
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 1</span>
                     <p className="mt-1">
-                      Facebook app → Settings &amp; Privacy → Settings → Download your information
+                      Facebook → Settings &amp; privacy → Settings → Meta Account → Your information and permissions → <Mark>Export your information</Mark> → Create export
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 2</span>
                     <p className="mt-1">
-                      Request a download. Choose <Mark>JSON</Mark>, not HTML. Range: All time.
+                      Download to device. Choose <Mark>JSON</Mark>, not HTML, range All time. Messenger history lives here, not in the Instagram export.
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 3</span>
                     <p className="mt-1">
-                      Check email for Facebook&apos;s download link, then drop the .zip here.
+                      The link stays available for 4 days. Drop the .zip here — add every part if it arrives split.
                     </p>
                   </li>
                 </>
