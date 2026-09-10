@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 type ArchiveDropzoneProps = {
   busy: boolean;
   error?: string | null;
-  onFile: (file: File) => void;
+  onFiles: (files: File[]) => void;
   onDemo: () => void;
 };
 
@@ -25,7 +25,7 @@ function isZipFile(file: File): boolean {
 export function ArchiveDropzone({
   busy,
   error,
-  onFile,
+  onFiles,
   onDemo,
 }: ArchiveDropzoneProps) {
   const inputId = useId();
@@ -37,16 +37,30 @@ export function ArchiveDropzone({
     "instagram" | "snapchat" | "whatsapp" | "facebook"
   >("instagram");
 
-  const submitFile = (file: File | undefined) => {
-    if (!file) {
+  const submitFiles = (list: FileList | null) => {
+    const chosen = Array.from(list ?? []);
+    if (chosen.length === 0) {
       return;
     }
-    if (!isZipFile(file)) {
-      setValidationError("Choose a .zip export from Instagram or WhatsApp.");
+
+    const zips = chosen.filter(isZipFile);
+    const rejected = chosen.length - zips.length;
+
+    if (zips.length === 0) {
+      setValidationError(
+        "Choose the .zip files your export downloaded as — not the unzipped folder.",
+      );
       return;
     }
-    setValidationError(null);
-    onFile(file);
+
+    // A split export is normally dropped in one go, so name what was skipped
+    // rather than silently importing a subset.
+    setValidationError(
+      rejected > 0
+        ? `Skipped ${rejected} file${rejected === 1 ? "" : "s"} that ${rejected === 1 ? "is" : "are"} not a .zip.`
+        : null,
+    );
+    onFiles(zips);
   };
 
   return (
@@ -71,7 +85,7 @@ export function ArchiveDropzone({
         onDrop={(event) => {
           event.preventDefault();
           setDragActive(false);
-          submitFile(event.dataTransfer.files.item(0) ?? undefined);
+          submitFiles(event.dataTransfer.files);
         }}
       >
         <button
@@ -86,18 +100,19 @@ export function ArchiveDropzone({
             strokeWidth={1.5}
           />
           <p className="mt-2 max-w-md font-body text-[14px] font-medium leading-6 text-ink/85 sm:mt-3 sm:text-[15px]">
-            Click or drag &amp; drop to upload your export
+            Click or drag &amp; drop your export — add every .zip at once if it arrived split
           </p>
         </button>
         <input
           ref={inputRef}
           id={inputId}
           type="file"
+          multiple
           accept=".zip,application/zip,application/x-zip-compressed"
           className="sr-only"
           disabled={busy}
           onChange={(event) => {
-            submitFile(event.target.files?.item(0) ?? undefined);
+            submitFiles(event.target.files);
             event.target.value = "";
           }}
         />

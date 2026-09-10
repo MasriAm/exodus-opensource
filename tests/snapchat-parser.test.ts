@@ -429,7 +429,103 @@ describe("Snapchat friends, snaps and calls", () => {
     ]);
 
     try {
-      await expect(collect(archive)).rejects.toThrow(/No Snapchat/);
+      await expect(collect(archive)).rejects.toThrow(
+        /no chats, snaps, friends or media/,
+      );
+    } finally {
+      await archive.close();
+    }
+  });
+});
+
+describe("split Snapchat exports", () => {
+  /**
+   * Snapchat hands out `mydata~<id>.zip` plus `-2` … `-9` continuation parts.
+   * Only the first carries the JSON; the rest are gigabytes of memories. Every
+   * one of them has to be recognized or the import stops at "unrecognized".
+   */
+  it("recognizes a media-only continuation part by its wrapper folder", async () => {
+    const archive = await makeArchive([
+      { path: "mydata~1788886440253/memories/2023-01-05_abc.jpg", body: {} },
+    ]);
+    try {
+      expect(detectParser(archive.paths())?.id).toBe("snapchat");
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("recognizes a part by its archive name when nothing inside names Snapchat", () => {
+    const flatPaths = ["memories/2023-01-05_abc.jpg", "memories/2023-01-06_def.mp4"];
+
+    expect(detectParser(flatPaths)).toBeNull();
+    expect(
+      detectParser(flatPaths, { fileName: "mydata~1788886440253-7.zip" })?.id,
+    ).toBe("snapchat");
+  });
+
+  it("accepts every continuation suffix Snapchat issues", () => {
+    for (const name of [
+      "mydata~1788886440253.zip",
+      "mydata~1788886440253-2.zip",
+      "mydata~1788886440253-9.zip",
+    ]) {
+      expect(detectParser([], { fileName: name })?.id).toBe("snapchat");
+    }
+  });
+
+  it("does not claim an unrelated archive on the strength of a name", () => {
+    expect(detectParser([], { fileName: "holiday-photos.zip" })).toBeNull();
+    expect(detectParser([], { fileName: "mydata-notsnapchat.zip" })).toBeNull();
+  });
+
+  it("recognizes a single category export that has no chat history in it", async () => {
+    const archive = await makeArchive([
+      { path: "json/friends.json", body: { Friends: [] } },
+    ]);
+    try {
+      expect(detectParser(archive.paths())?.id).toBe("snapchat");
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("turns a memories part into media rows instead of refusing it", async () => {
+    const archive = await makeArchive([
+      { path: "mydata~123/memories/2023-04-12_one.jpg", body: {} },
+      { path: "mydata~123/memories/2021-11-02_two.mp4", body: {} },
+      { path: "mydata~123/chat_media/2022-06-01_three.png", body: {} },
+    ]);
+
+    try {
+      const rows = await collect(archive);
+      const media = rows.filter((row) => row.table === "media");
+
+      expect(media).toHaveLength(3);
+      expect(media.map((row) => row.table === "media" && row.kind).sort()).toEqual([
+        "image",
+        "image",
+        "video",
+      ]);
+      // The date in the filename is the only timestamp these files carry.
+      const first = media.find(
+        (row) => row.table === "media" && row.zip_path.endsWith("2023-04-12_one.jpg"),
+      );
+      expect(first?.table === "media" && first.taken_at_ms).toBe(
+        Date.UTC(2023, 3, 12),
+      );
+      expect(first?.table === "media" && first.conversation).toBe("Memories");
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("still refuses a part with nothing readable in any category", async () => {
+    const archive = await makeArchive([
+      { path: "mydata~123/readme.txt", body: {} },
+    ]);
+    try {
+      await expect(collect(archive)).rejects.toThrow(/no chats, snaps, friends or media/);
     } finally {
       await archive.close();
     }

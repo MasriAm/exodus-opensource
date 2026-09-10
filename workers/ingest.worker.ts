@@ -247,7 +247,7 @@ async function detectArchive(file: File): Promise<string | null> {
   let candidate: ZipEntryMap | null = null;
   try {
     candidate = await ZipEntryMap.open(file);
-    const parser = detectParser(candidate.paths());
+    const parser = detectParser(candidate.paths(), { fileName: file.name });
     return parser ? parser.displayName : null;
   } catch {
     return null;
@@ -317,7 +317,7 @@ async function ingestArchive(
     label: "Detecting the export format…",
   });
 
-  const parser = detectParser(candidate.paths());
+  const parser = detectParser(candidate.paths(), { fileName: file.name });
   if (!parser) {
     await closeCandidate(candidate);
     throw new PublicWorkerError(

@@ -16,6 +16,7 @@ import { ValidatedBatchEmitter } from "../batch";
 import { parseJson, stringifyJson } from "../json";
 import {
   entryBasename,
+  entryPathSegments,
   hasFacebookMarker,
   hasInstagramMarker,
 } from "../paths";
@@ -25,6 +26,80 @@ import type { ZipEntryMap } from "../../lib/zip";
 const MAX_JSON_ENTRY_BYTES = 48 * 1024 * 1024;
 
 const PLATFORM = "snapchat";
+
+/**
+ * Every JSON file Snapchat ships across the ten export categories. Any one of
+ * them identifies the archive, which matters because a category-selected
+ * export may contain only one of them.
+ */
+const SNAPCHAT_JSON_BASENAMES: ReadonlySet<string> = new Set([
+  "chat_history.json",
+  "snap_history.json",
+  "talk_history.json",
+  "memories_history.json",
+  "account.json",
+  "account_history.json",
+  "friends.json",
+  "user_profile.json",
+  "subscriptions.json",
+  "location_history.json",
+  "shared_story.json",
+  "story_history.json",
+  "spotlight.json",
+  "purchase_history.json",
+  "support_history.json",
+  "search_history.json",
+  "connected_apps.json",
+  "bitmoji.json",
+  "ranking.json",
+  "snap_ai.json",
+  "in_app_surveys.json",
+  "terms_history.json",
+  "countdowns.json",
+  "community_history.json",
+]);
+
+/** Folders that hold the actual bytes rather than the metadata. */
+const SNAPCHAT_MEDIA_DIRECTORIES: ReadonlySet<string> = new Set([
+  "memories",
+  "chat_media",
+  "shared_stories",
+  "my_sounds",
+  "my_custom_stickers",
+  "my_lenses",
+  "selfie",
+  "cameos",
+]);
+
+/** `mydata~1788886440253.zip`, and its `-2` … `-9` continuation parts. */
+const SNAPCHAT_ARCHIVE_NAME = /^mydata~\d+(?:-\d+)?$/i;
+
+function isSnapchatArchiveName(fileName: string | undefined): boolean {
+  if (typeof fileName !== "string") {
+    return false;
+  }
+  const stem = entryBasename(fileName).replace(/\.zip$/i, "").trim();
+  return SNAPCHAT_ARCHIVE_NAME.test(stem);
+}
+
+const MEDIA_EXTENSIONS: ReadonlyMap<string, MediaKind> = new Map([
+  ["jpg", "image"],
+  ["jpeg", "image"],
+  ["png", "image"],
+  ["gif", "image"],
+  ["webp", "image"],
+  ["heic", "image"],
+  ["mp4", "video"],
+  ["mov", "video"],
+  ["webm", "video"],
+  ["m4a", "audio"],
+  ["mp3", "audio"],
+  ["aac", "audio"],
+  ["opus", "audio"],
+]);
+
+/** Snapchat names memories `2023-01-05_<hash>.jpg`. */
+const MEDIA_DATE_PREFIX = /^(\d{4})-(\d{2})-(\d{2})/;
 
 /** Top-level keys in the category shape, which are labels rather than people. */
 const CATEGORY_KEY_PATTERN =
@@ -553,17 +628,106 @@ async function parseCalls(
   return emitted;
 }
 
+/**
+ * Register the media a part actually carries.
+ *
+ * A 9-part export puts the JSON in one zip and gigabytes of memories in the
+ * rest. Those parts used to be rejected outright; walking their entries costs
+ * nothing (the central directory is already open, no bytes are read) and turns
+ * each one into real rows instead of an error.
+ */
+async function parseMediaEntries(
+  entries: ZipEntryMap,
+  batch: ValidatedBatchEmitter,
+  progress: (label: string) => void,
+): Promise<number> {
+  const mediaPaths = entries.paths().filter((path) => {
+    const segments = entryPathSegments(path).map((segment) =>
+      segment.toLowerCase(),
+    );
+    if (!segments.some((segment) => SNAPCHAT_MEDIA_DIRECTORIES.has(segment))) {
+      return false;
+    }
+    const extension = entryBasename(path).split(".").pop()?.toLowerCase() ?? "";
+    return MEDIA_EXTENSIONS.has(extension);
+  });
+
+  if (mediaPaths.length === 0) {
+    return 0;
+  }
+
+  progress(`Cataloguing ${mediaPaths.length.toLocaleString()} media files…`);
+
+  for (const path of mediaPaths) {
+    const basename = entryBasename(path);
+    const extension = basename.split(".").pop()?.toLowerCase() ?? "";
+    const kind = MEDIA_EXTENSIONS.get(extension) ?? "other";
+
+    const dateMatch = MEDIA_DATE_PREFIX.exec(basename);
+    const takenAtMs =
+      dateMatch === null
+        ? null
+        : Date.UTC(
+            Number.parseInt(dateMatch[1], 10),
+            Number.parseInt(dateMatch[2], 10) - 1,
+            Number.parseInt(dateMatch[3], 10),
+          );
+
+    const folder = entryPathSegments(path)
+      .map((segment) => segment.toLowerCase())
+      .find((segment) => SNAPCHAT_MEDIA_DIRECTORIES.has(segment));
+
+    await batch.add(
+      {
+        table: "media",
+        platform: PLATFORM,
+        zip_path: path,
+        kind,
+        taken_at_ms:
+          takenAtMs !== null && Number.isFinite(takenAtMs) ? takenAtMs : null,
+        conversation: folder === "chat_media" ? null : "Memories",
+      },
+      path,
+      "Cataloguing Snapchat media…",
+    );
+  }
+
+  await batch.flush("Cataloguing Snapchat media…");
+  return mediaPaths.length;
+}
+
 export const snapchatParser: DataParser = {
   id: "snapchat",
   displayName: "Snapchat",
 
-  detect(entryPaths) {
+  detect(entryPaths, context) {
     if (hasInstagramMarker(entryPaths) || hasFacebookMarker(entryPaths)) {
       return false;
     }
+
+    // A split export names itself: only one part carries the JSON, so the
+    // other eight are recognizable by the archive name and nothing else.
+    if (isSnapchatArchiveName(context?.fileName)) {
+      return true;
+    }
+
     return entryPaths.some((path) => {
-      const basename = entryBasename(path).toLowerCase();
-      return basename === "chat_history.json" || basename === "snap_history.json";
+      if (SNAPCHAT_JSON_BASENAMES.has(entryBasename(path).toLowerCase())) {
+        return true;
+      }
+      const segments = entryPathSegments(path).map((segment) =>
+        segment.toLowerCase(),
+      );
+      // The wrapper folder carries the same `mydata~<id>` name as the zip.
+      if (segments.some((segment) => SNAPCHAT_ARCHIVE_NAME.test(segment))) {
+        return true;
+      }
+      // A media folder only counts alongside the export's own scaffolding,
+      // since "memories/" on its own is far too generic to claim.
+      return (
+        segments.some((segment) => SNAPCHAT_MEDIA_DIRECTORIES.has(segment)) &&
+        segments.some((segment) => segment === "json" || segment === "html")
+      );
     });
   },
 
@@ -588,14 +752,18 @@ export const snapchatParser: DataParser = {
       );
     }
 
-    const chats = await parseChatHistory(entries, ownerName, batch, report);
+    await parseChatHistory(entries, ownerName, batch, report);
     await parseSnapHistory(entries, batch, report);
     await parseFriends(entries, batch, report);
     await parseCalls(entries, batch, report);
+    await parseMediaEntries(entries, batch, report);
 
-    if (batch.emitted === 0 && chats === 0) {
+    // A split export is mostly media parts with no history in them at all, so
+    // an empty part is normal rather than a failure. Only a part carrying
+    // nothing we can read in any category is worth refusing.
+    if (batch.emitted === 0) {
       throw new Error(
-        "No Snapchat chat, snap or friend history was found in this export",
+        "This Snapchat part contains no chats, snaps, friends or media we can read",
       );
     }
 
