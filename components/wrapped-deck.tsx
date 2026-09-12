@@ -1273,7 +1273,7 @@ export function WrappedDeck({
   const current = slides[safeIndex];
 
   const navButtonClass =
-    "inline-flex min-h-12 min-w-[7.25rem] cursor-pointer items-center justify-center border-strong bg-cream px-4 font-mono text-base font-bold tracking-[0.04em] text-ink shadow-press transition-[transform,box-shadow,background-color,opacity] enabled:hover:bg-receipt enabled:active:translate-x-0.5 enabled:active:translate-y-0.5 enabled:active:shadow-[2px_2px_0_var(--ink)] disabled:cursor-not-allowed disabled:bg-paper disabled:opacity-40 disabled:shadow-none motion-reduce:transition-none sm:min-h-[3.25rem] sm:min-w-[8.5rem] sm:px-5 sm:text-lg";
+    "inline-flex min-h-12 min-w-[7.25rem] cursor-pointer items-center justify-center border-strong bg-cream px-4 font-display text-base font-bold tracking-[0.04em] text-ink shadow-press transition-[transform,box-shadow,background-color,opacity] enabled:hover:bg-receipt enabled:active:translate-x-0.5 enabled:active:translate-y-0.5 enabled:active:shadow-[var(--shadow-press-active)] disabled:cursor-not-allowed disabled:bg-paper disabled:opacity-40 disabled:shadow-none motion-reduce:transition-none sm:min-h-[3.25rem] sm:min-w-[8.5rem] sm:px-5 sm:text-lg";
 
   return (
     <main className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-paper">

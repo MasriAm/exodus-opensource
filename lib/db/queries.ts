@@ -1082,42 +1082,94 @@ export async function mediaList(
 export async function wrappedStats(
   connection: AsyncDuckDBConnection,
 ): Promise<WrappedStatsResult> {
+  // Only the overview is essential — it carries the totals the deck opens on.
+  // Every other panel is optional, so a single query failing on an unusual
+  // archive costs that one slide rather than the whole Wrapped.
   const overview = onlyRow(
     await queryRows(connection, WRAPPED_OVERVIEW_SQL),
     "Wrapped overview",
   );
-  const contactRows = await queryRows(connection, WRAPPED_TOP_CONTACTS_SQL);
-  const hourRows = await preparedRows(connection, WRAPPED_HOURS_SQL, [
-    localUtcOffsetSeconds(),
-  ]);
-  const busiestRows = await queryRows(connection, WRAPPED_BUSIEST_DAY_SQL);
-  const wordRows = await preparedRows(
-    connection,
-    WRAPPED_TOP_WORDS_SQL,
-    [...WRAPPED_STOP_WORDS],
-  );
-  const firstRows = await queryRows(connection, WRAPPED_FIRST_MESSAGE_SQL);
-  const streakRows = await queryRows(connection, WRAPPED_LONGEST_STREAK_SQL);
-  const mutualRows = await queryRows(connection, WRAPPED_MUTUAL_FOLLOWS_SQL);
-  const callRows = await queryRows(connection, WRAPPED_LONGEST_CALL_SQL);
-  const cringeRows = await queryRows(connection, WRAPPED_CRINGE_COMMENTS_SQL);
-  const interestRows = await queryRows(connection, WRAPPED_INTERESTS_SQL);
-  const profileRows = await queryRows(connection, WRAPPED_PROFILE_HISTORY_SQL);
-  const firstImageRows = await queryRows(connection, WRAPPED_FIRST_IMAGE_SQL);
-  
-  let fallbackUsername: string | null = null;
-  const ownerRows = await queryRows(connection, "SELECT payload FROM events WHERE kind = 'archive_owner' LIMIT 1");
-  if (ownerRows.length > 0) {
-    const payloadStr = typeof ownerRows[0][0] === 'string' ? ownerRows[0][0] : String(ownerRows[0][0] ?? "");
+
+  const optional = async <Row>(
+    label: string,
+    run: () => Promise<Row[]>,
+  ): Promise<Row[]> => {
     try {
-      fallbackUsername = JSON.parse(payloadStr).name;
-    } catch {}
+      return await run();
+    } catch (error: unknown) {
+      console.error(`Wrapped panel "${label}" could not be calculated.`, error);
+      return [];
+    }
+  };
+
+  const contactRows = await optional("top contacts", () =>
+    queryRows(connection, WRAPPED_TOP_CONTACTS_SQL),
+  );
+  const hourRows = await optional("messages by hour", () =>
+    preparedRows(connection, WRAPPED_HOURS_SQL, [localUtcOffsetSeconds()]),
+  );
+  const busiestRows = await optional("busiest day", () =>
+    queryRows(connection, WRAPPED_BUSIEST_DAY_SQL),
+  );
+  const wordRows = await optional("top words", () =>
+    preparedRows(connection, WRAPPED_TOP_WORDS_SQL, [...WRAPPED_STOP_WORDS]),
+  );
+  const firstRows = await optional("first message", () =>
+    queryRows(connection, WRAPPED_FIRST_MESSAGE_SQL),
+  );
+  const streakRows = await optional("longest streak", () =>
+    queryRows(connection, WRAPPED_LONGEST_STREAK_SQL),
+  );
+  const mutualRows = await optional("mutual follows", () =>
+    queryRows(connection, WRAPPED_MUTUAL_FOLLOWS_SQL),
+  );
+  const callRows = await optional("longest call", () =>
+    queryRows(connection, WRAPPED_LONGEST_CALL_SQL),
+  );
+  const cringeRows = await optional("comments", () =>
+    queryRows(connection, WRAPPED_CRINGE_COMMENTS_SQL),
+  );
+  const interestRows = await optional("interests", () =>
+    queryRows(connection, WRAPPED_INTERESTS_SQL),
+  );
+  const profileRows = await optional("profile history", () =>
+    queryRows(connection, WRAPPED_PROFILE_HISTORY_SQL),
+  );
+  const firstImageRows = await optional("oldest images", () =>
+    queryRows(connection, WRAPPED_FIRST_IMAGE_SQL),
+  );
+
+  let fallbackUsername: string | null = null;
+  // Rows are keyed by column name, so the previous numeric index always read
+  // undefined and the owner name never resolved.
+  const ownerRows = await optional("archive owner", () =>
+    queryRows(
+      connection,
+      "SELECT payload FROM events WHERE kind = 'archive_owner' LIMIT 1",
+    ),
+  );
+  if (ownerRows.length > 0) {
+    const payloadStr = readNullableString(ownerRows[0], "payload") ?? "";
+    try {
+      const parsed: unknown = JSON.parse(payloadStr);
+      if (parsed !== null && typeof parsed === "object" && "name" in parsed) {
+        const name = (parsed as { name?: unknown }).name;
+        fallbackUsername = typeof name === "string" ? name : null;
+      }
+    } catch {
+      // An unreadable owner payload just leaves the username unknown.
+    }
   }
 
   if (!fallbackUsername) {
-    const personalInfoRows = await queryRows(connection, "SELECT payload FROM events WHERE kind = 'personal_info'");
+    const personalInfoRows = await optional("personal info", () =>
+      queryRows(
+        connection,
+        "SELECT payload FROM events WHERE kind = 'personal_info'",
+      ),
+    );
     for (const row of personalInfoRows) {
-      const payloadStr = typeof row[0] === 'string' ? row[0] : String(row[0] ?? "");
+      const payloadStr = readNullableString(row, "payload") ?? "";
       const match = /"(?:username|user name|Username)"\s*:\s*(?:\{[^}]*"value"\s*:\s*)?"([^"]+)"/i.exec(payloadStr);
       if (match) {
         fallbackUsername = match[1];

@@ -275,16 +275,32 @@ function resolveConversation(
   record: ChatRecord,
   groupKey: string,
   keyIsCategory: boolean,
+  ownerName: string,
 ): string {
   if (record.conversationTitle !== null) {
     return record.conversationTitle;
   }
+  // The per-friend shape keys each array by the thread itself, which is the
+  // most reliable answer available.
   if (!keyIsCategory) {
     return groupKey;
   }
-  // In the category shape Snapchat stores the counterparty in `From` for both
-  // directions, so it is the thread name even on messages you sent.
-  return record.from ?? record.to ?? "Unknown";
+
+  // In the category shape the thread is whichever side is not the archive
+  // owner. Snapchat has shipped both conventions for `From` on sent messages —
+  // some exports name the recipient, others name you — and trusting it blindly
+  // files your own outgoing messages under your own name, inventing a
+  // conversation with yourself that then outranks every real person.
+  const owner = ownerName.trim().toLocaleLowerCase();
+  const parties = [record.from, record.to].filter(
+    (value): value is string =>
+      typeof value === "string" && value.trim().length > 0,
+  );
+  const counterparty = parties.find(
+    (value) => value.trim().toLocaleLowerCase() !== owner,
+  );
+
+  return counterparty ?? parties[0] ?? "Unknown";
 }
 
 function resolveSender(
@@ -380,7 +396,12 @@ async function parseChatHistory(
         continue;
       }
 
-      const conversation = resolveConversation(record, groupKey, keyIsCategory);
+      const conversation = resolveConversation(
+        record,
+        groupKey,
+        keyIsCategory,
+        ownerName,
+      );
       const sender = resolveSender(
         record,
         conversation,
@@ -438,6 +459,7 @@ async function parseChatHistory(
 
 async function parseSnapHistory(
   entries: ZipEntryMap,
+  ownerName: string,
   batch: ValidatedBatchEmitter,
   progress: (label: string) => void,
 ): Promise<number> {
@@ -470,6 +492,7 @@ async function parseSnapHistory(
         record,
         groupKey,
         isCategoryKey(groupKey),
+        ownerName,
       );
 
       await batch.add(
@@ -562,6 +585,7 @@ async function parseFriends(
 
 async function parseCalls(
   entries: ZipEntryMap,
+  ownerName: string,
   batch: ValidatedBatchEmitter,
   progress: (label: string) => void,
 ): Promise<number> {
@@ -598,7 +622,12 @@ async function parseCalls(
       const conversation =
         record === null
           ? groupKey
-          : resolveConversation(record, groupKey, isCategoryKey(groupKey));
+          : resolveConversation(
+              record,
+              groupKey,
+              isCategoryKey(groupKey),
+              ownerName,
+            );
       const type = (readString(pick(entry, "Type", "Media Type")) ?? "").toUpperCase();
 
       await batch.add(
@@ -753,9 +782,9 @@ export const snapchatParser: DataParser = {
     }
 
     await parseChatHistory(entries, ownerName, batch, report);
-    await parseSnapHistory(entries, batch, report);
+    await parseSnapHistory(entries, ownerName, batch, report);
     await parseFriends(entries, batch, report);
-    await parseCalls(entries, batch, report);
+    await parseCalls(entries, ownerName, batch, report);
     await parseMediaEntries(entries, batch, report);
 
     // A split export is mostly media parts with no history in them at all, so

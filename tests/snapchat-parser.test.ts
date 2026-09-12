@@ -531,3 +531,107 @@ describe("split Snapchat exports", () => {
     }
   });
 });
+
+describe("conversation attribution", () => {
+  /**
+   * Snapchat has shipped both conventions for `From` on sent messages. If the
+   * owner's own name is allowed to become a thread, every outgoing message
+   * collapses into one fake conversation with yourself, which then outranks
+   * every real person in "who you talked to most".
+   */
+  it("never files your own messages under your own name", async () => {
+    const archive = await makeArchive([
+      { path: "json/account.json", body: ACCOUNT },
+      {
+        path: "json/chat_history.json",
+        body: {
+          "Sent Saved Chat History": [
+            {
+              // This export names the sender, not the recipient.
+              From: "yousef.demo",
+              To: "maya.kh",
+              "Media Type": "TEXT",
+              Created: "2022-02-02 12:05:00 UTC",
+              Content: "on my way",
+              IsSender: true,
+            },
+          ],
+        },
+      },
+    ]);
+
+    try {
+      const messages = (await collect(archive)).filter(
+        (row) => row.table === "messages",
+      );
+      expect(messages[0]).toMatchObject({
+        conversation: "maya.kh",
+        sender: "yousef.demo",
+      });
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("still uses From when it is the counterparty", async () => {
+    const archive = await makeArchive([
+      { path: "json/account.json", body: ACCOUNT },
+      {
+        path: "json/chat_history.json",
+        body: {
+          "Sent Saved Chat History": [
+            {
+              // The other convention: From already names the recipient.
+              From: "maya.kh",
+              "Media Type": "TEXT",
+              Created: "2022-02-02 12:05:00 UTC",
+              Content: "on my way",
+              IsSender: true,
+            },
+          ],
+        },
+      },
+    ]);
+
+    try {
+      const messages = (await collect(archive)).filter(
+        (row) => row.table === "messages",
+      );
+      expect(messages[0]).toMatchObject({
+        conversation: "maya.kh",
+        sender: "yousef.demo",
+      });
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("lets the per-friend key win over a misleading From", async () => {
+    const archive = await makeArchive([
+      { path: "json/account.json", body: ACCOUNT },
+      {
+        path: "json/chat_history.json",
+        body: {
+          "maya.kh": [
+            {
+              From: "yousef.demo",
+              "Media Type": "TEXT",
+              Created: "2022-02-02 12:05:00 UTC",
+              Content: "on my way",
+              IsSender: true,
+            },
+          ],
+        },
+      },
+    ]);
+
+    try {
+      const messages = (await collect(archive)).filter(
+        (row) => row.table === "messages",
+      );
+      expect(messages[0]).toMatchObject({ conversation: "maya.kh" });
+    } finally {
+      await archive.close();
+    }
+  });
+});

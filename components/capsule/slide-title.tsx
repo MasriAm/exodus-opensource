@@ -25,7 +25,10 @@ export function SlideTitle({
         className,
       )}
     >
-      <span className={accentClass[accent]} aria-hidden="true">
+      <span
+        className={cn("slide-title-marker", accentClass[accent])}
+        aria-hidden="true"
+      >
         {">> "}
       </span>
       {children}

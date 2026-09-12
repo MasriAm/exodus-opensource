@@ -630,12 +630,14 @@ function archiveOpenTimeout(file: File): number {
 }
 
 function heavyQueryTimeout(name: QueryName): number {
-  if (
-    name === "wrappedStats" ||
-    name === "personDetail" ||
-    name === "footprint" ||
-    name === "dramaCorpus"
-  ) {
+  // wrappedStats is a batch of a dozen aggregates and dramaCorpus pulls tens
+  // of thousands of rows across the boundary. On an archive with years of
+  // history those legitimately outrun the heavy budget, and timing out costs
+  // the whole screen rather than one panel.
+  if (name === "wrappedStats" || name === "dramaCorpus") {
+    return 4 * 60_000;
+  }
+  if (name === "personDetail" || name === "footprint") {
     return WORKER_HEAVY_TIMEOUT_MS;
   }
   return WORKER_OP_TIMEOUT_MS;
