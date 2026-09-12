@@ -1083,111 +1083,177 @@ export async function wrappedStats(
   connection: AsyncDuckDBConnection,
 ): Promise<WrappedStatsResult> {
   // Only the overview is essential — it carries the totals the deck opens on.
-  // Every other panel is optional, so a single query failing on an unusual
-  // archive costs that one slide rather than the whole Wrapped.
+  // Everything else is a panel: guarded across both its query AND its row
+  // mapping, because a single unexpected NULL in a mapper used to throw and
+  // take the entire Wrapped down with it.
   const overview = onlyRow(
     await queryRows(connection, WRAPPED_OVERVIEW_SQL),
     "Wrapped overview",
   );
 
-  const optional = async <Row>(
+  const panel = async <Value>(
     label: string,
-    run: () => Promise<Row[]>,
-  ): Promise<Row[]> => {
+    fallback: Value,
+    build: () => Promise<Value>,
+  ): Promise<Value> => {
     try {
-      return await run();
+      return await build();
     } catch (error: unknown) {
       console.error(`Wrapped panel "${label}" could not be calculated.`, error);
-      return [];
+      return fallback;
     }
   };
 
-  const contactRows = await optional("top contacts", () =>
-    queryRows(connection, WRAPPED_TOP_CONTACTS_SQL),
-  );
-  const hourRows = await optional("messages by hour", () =>
-    preparedRows(connection, WRAPPED_HOURS_SQL, [localUtcOffsetSeconds()]),
-  );
-  const busiestRows = await optional("busiest day", () =>
-    queryRows(connection, WRAPPED_BUSIEST_DAY_SQL),
-  );
-  const wordRows = await optional("top words", () =>
-    preparedRows(connection, WRAPPED_TOP_WORDS_SQL, [...WRAPPED_STOP_WORDS]),
-  );
-  const firstRows = await optional("first message", () =>
-    queryRows(connection, WRAPPED_FIRST_MESSAGE_SQL),
-  );
-  const streakRows = await optional("longest streak", () =>
-    queryRows(connection, WRAPPED_LONGEST_STREAK_SQL),
-  );
-  const mutualRows = await optional("mutual follows", () =>
-    queryRows(connection, WRAPPED_MUTUAL_FOLLOWS_SQL),
-  );
-  const callRows = await optional("longest call", () =>
-    queryRows(connection, WRAPPED_LONGEST_CALL_SQL),
-  );
-  const cringeRows = await optional("comments", () =>
-    queryRows(connection, WRAPPED_CRINGE_COMMENTS_SQL),
-  );
-  const interestRows = await optional("interests", () =>
-    queryRows(connection, WRAPPED_INTERESTS_SQL),
-  );
-  const profileRows = await optional("profile history", () =>
-    queryRows(connection, WRAPPED_PROFILE_HISTORY_SQL),
-  );
-  const firstImageRows = await optional("oldest images", () =>
-    queryRows(connection, WRAPPED_FIRST_IMAGE_SQL),
+  const topContacts = await panel<WrappedContact[]>("top contacts", [], async () =>
+    (await queryRows(connection, WRAPPED_TOP_CONTACTS_SQL)).map(wrappedContact),
   );
 
-  let fallbackUsername: string | null = null;
-  // Rows are keyed by column name, so the previous numeric index always read
-  // undefined and the owner name never resolved.
-  const ownerRows = await optional("archive owner", () =>
-    queryRows(
-      connection,
-      "SELECT payload FROM events WHERE kind = 'archive_owner' LIMIT 1",
-    ),
+  const messagesByHour = await panel<WrappedHour[]>("messages by hour", [], async () =>
+    (
+      await preparedRows(connection, WRAPPED_HOURS_SQL, [
+        localUtcOffsetSeconds(),
+      ])
+    ).map(wrappedHour),
   );
-  if (ownerRows.length > 0) {
-    const payloadStr = readNullableString(ownerRows[0], "payload") ?? "";
-    try {
-      const parsed: unknown = JSON.parse(payloadStr);
-      if (parsed !== null && typeof parsed === "object" && "name" in parsed) {
-        const name = (parsed as { name?: unknown }).name;
-        fallbackUsername = typeof name === "string" ? name : null;
+
+  const busiestDay = await panel<WrappedBusiestDay | null>(
+    "busiest day",
+    null,
+    async () => {
+      const rows = await queryRows(connection, WRAPPED_BUSIEST_DAY_SQL);
+      return rows.length === 0 ? null : wrappedBusiestDay(rows[0]);
+    },
+  );
+
+  const topWords = await panel<WrappedWord[]>("top words", [], async () =>
+    (
+      await preparedRows(connection, WRAPPED_TOP_WORDS_SQL, [
+        ...WRAPPED_STOP_WORDS,
+      ])
+    ).map(wrappedWord),
+  );
+
+  const firstMessage = await panel<WrappedFirstMessage | null>(
+    "first message",
+    null,
+    async () => {
+      const rows = await queryRows(connection, WRAPPED_FIRST_MESSAGE_SQL);
+      return rows.length === 0 ? null : wrappedFirstMessage(rows[0]);
+    },
+  );
+
+  const longestStreak = await panel<WrappedStreak | null>(
+    "longest streak",
+    null,
+    async () => {
+      const rows = await queryRows(connection, WRAPPED_LONGEST_STREAK_SQL);
+      return rows.length === 0 ? null : wrappedStreak(rows[0]);
+    },
+  );
+
+  const nowMs = Date.now();
+  const longestMutualFollows = await panel<WrappedMutualFollow[]>(
+    "mutual follows",
+    [],
+    async () =>
+      (await queryRows(connection, WRAPPED_MUTUAL_FOLLOWS_SQL))
+        .map((row) => wrappedMutualFollow(row, nowMs))
+        .sort(
+          (left, right) =>
+            right.durationSec - left.durationSec ||
+            left.username.localeCompare(right.username),
+        ),
+  );
+
+  const longestCall = await panel<WrappedLongestCall | null>(
+    "longest call",
+    null,
+    async () => {
+      const rows = await queryRows(connection, WRAPPED_LONGEST_CALL_SQL);
+      return rows.length === 0 ? null : wrappedLongestCall(rows[0]);
+    },
+  );
+
+  const cringeComments = await panel<WrappedCringeComment[]>(
+    "comments",
+    [],
+    async () =>
+      (await queryRows(connection, WRAPPED_CRINGE_COMMENTS_SQL)).map(
+        wrappedCringeComment,
+      ),
+  );
+
+  const interestsByYear = await panel<WrappedInterestsByYear[]>(
+    "interests",
+    [],
+    async () =>
+      groupInterestsByYear(await queryRows(connection, WRAPPED_INTERESTS_SQL)),
+  );
+
+  const profileHistory = await panel<WrappedProfileChange[]>(
+    "profile history",
+    [],
+    async () =>
+      (await queryRows(connection, WRAPPED_PROFILE_HISTORY_SQL))
+        .map(wrappedProfileChange)
+        .filter((row): row is WrappedProfileChange => row !== null),
+  );
+
+  const oldestImages = await panel<WrappedFirstImage[]>(
+    "oldest images",
+    [],
+    async () =>
+      (await queryRows(connection, WRAPPED_FIRST_IMAGE_SQL)).map(
+        wrappedFirstImage,
+      ),
+  );
+
+  const fallbackUsername = await panel<string | null>(
+    "archive owner",
+    null,
+    async () => {
+      // Rows are keyed by column name, so the previous numeric index always
+      // read undefined and the owner name never resolved.
+      const ownerRows = await queryRows(
+        connection,
+        "SELECT payload FROM events WHERE kind = 'archive_owner' LIMIT 1",
+      );
+      if (ownerRows.length > 0) {
+        const parsed: unknown = JSON.parse(
+          readNullableString(ownerRows[0], "payload") ?? "null",
+        );
+        if (parsed !== null && typeof parsed === "object" && "name" in parsed) {
+          const name = (parsed as { name?: unknown }).name;
+          if (typeof name === "string" && name.trim().length > 0) {
+            return name;
+          }
+        }
       }
-    } catch {
-      // An unreadable owner payload just leaves the username unknown.
-    }
-  }
 
-  if (!fallbackUsername) {
-    const personalInfoRows = await optional("personal info", () =>
-      queryRows(
+      const personalInfoRows = await queryRows(
         connection,
         "SELECT payload FROM events WHERE kind = 'personal_info'",
-      ),
-    );
-    for (const row of personalInfoRows) {
-      const payloadStr = readNullableString(row, "payload") ?? "";
-      const match = /"(?:username|user name|Username)"\s*:\s*(?:\{[^}]*"value"\s*:\s*)?"([^"]+)"/i.exec(payloadStr);
-      if (match) {
-        fallbackUsername = match[1];
-        break;
+      );
+      for (const row of personalInfoRows) {
+        const payloadStr = readNullableString(row, "payload") ?? "";
+        const match =
+          /"(?:username|user name|Username)"\s*:\s*(?:\{[^}]*"value"\s*:\s*)?"([^"]+)"/i.exec(
+            payloadStr,
+          );
+        if (match) {
+          return match[1];
+        }
       }
-    }
-  }
+      return null;
+    },
+  );
 
-  const messagesByHour = hourRows.map(wrappedHour);
   const peak = messagesByHour.reduce<WrappedHour | null>((current, candidate) => {
     if (!current || candidate.messageCount > current.messageCount) {
       return candidate;
     }
     return current;
   }, null);
-  const topContacts = contactRows.map(wrappedContact);
-  const topWords = wordRows.map(wrappedWord);
-  const nowMs = Date.now();
 
   return {
     fallbackUsername,
@@ -1200,33 +1266,19 @@ export async function wrappedStats(
     peakHour: peak && peak.messageCount > 0 ? peak.hour : null,
     /** Peak-hour message count (legacy field name kept for the deck/API). */
     threeAmEraMessages: peak && peak.messageCount > 0 ? peak.messageCount : 0,
-    busiestDay:
-      busiestRows.length === 0 ? null : wrappedBusiestDay(busiestRows[0]),
+    busiestDay,
     topWords,
-    firstMessage:
-      firstRows.length === 0 ? null : wrappedFirstMessage(firstRows[0]),
-    longestStreak:
-      streakRows.length === 0 ? null : wrappedStreak(streakRows[0]),
-    longestMutualFollows: mutualRows
-      .map((row) => wrappedMutualFollow(row, nowMs))
-      .sort(
-        (left, right) =>
-          right.durationSec - left.durationSec ||
-          left.username.localeCompare(right.username),
-      ),
+    firstMessage,
+    longestStreak,
+    longestMutualFollows,
     longestConversation: topContacts[0] ?? null,
     mostTypedWord: topWords[0] ?? null,
-    longestCall: callRows.length === 0 ? null : wrappedLongestCall(callRows[0]),
-    cringeComments: cringeRows.map(wrappedCringeComment),
-    interestsByYear: groupInterestsByYear(interestRows),
-    profileHistory: profileRows
-      .map(wrappedProfileChange)
-      .filter((row): row is WrappedProfileChange => row !== null),
-    firstImageSent:
-      firstImageRows.length === 0
-        ? null
-        : wrappedFirstImage(firstImageRows[0]),
-    oldestImages: firstImageRows.map(wrappedFirstImage),
+    longestCall,
+    cringeComments,
+    interestsByYear,
+    profileHistory,
+    firstImageSent: oldestImages[0] ?? null,
+    oldestImages,
   };
 }
 
@@ -1450,7 +1502,10 @@ function wrappedProfileChange(row: SqlRow): WrappedProfileChange | null {
 function wrappedFirstImage(row: SqlRow): WrappedFirstImage {
   return {
     zipPath: readString(row, "zip_path"),
-    conversation: readString(row, "conversation"),
+    // media.conversation is nullable by schema — a Snapchat chat attachment or
+    // a loose photo belongs to no thread — and demanding a string here threw on
+    // the first such row.
+    conversation: readNullableString(row, "conversation") ?? "",
     takenAtMs: readNullableNumber(row, "taken_at_ms"),
   };
 }

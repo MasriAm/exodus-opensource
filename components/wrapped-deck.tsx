@@ -114,6 +114,8 @@ type WrappedDeckProps = {
   theme?: PlatformThemeId;
   loading: boolean;
   error: string | null;
+  /** Raw failure text, shown so a local-only error can still be reported. */
+  errorDetail?: string | null;
   readMediaBlob: (zipPath: string) => Promise<Blob>;
 };
 
@@ -274,6 +276,7 @@ export function WrappedDeck({
   theme = "archive",
   loading,
   error,
+  errorDetail = null,
   readMediaBlob,
 }: WrappedDeckProps) {
   const router = useRouter();
@@ -1236,9 +1239,21 @@ export function WrappedDeck({
           title="Your Wrapped could not be calculated"
           description={error}
           action={
-            <PressButton type="button" onClick={goDashboard}>
-              Skip to dashboard
-            </PressButton>
+            <div className="flex flex-col items-start gap-4">
+              <PressButton type="button" onClick={goDashboard}>
+                Skip to dashboard
+              </PressButton>
+              {errorDetail ? (
+                <details className="max-w-xl text-start">
+                  <summary className="cursor-pointer font-display text-xs text-ink/70">
+                    What went wrong
+                  </summary>
+                  <p className="mt-2 break-words font-mono text-xs leading-5 text-body">
+                    {errorDetail}
+                  </p>
+                </details>
+              ) : null}
+            </div>
           }
         />
       </main>

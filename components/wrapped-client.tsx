@@ -26,6 +26,7 @@ export function WrappedClient({ api }: WrappedClientProps) {
   const [theme, setTheme] = useState<PlatformThemeId>("archive");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
   const readMediaBlob = useCallback(
     (zipPath: string) => api.readMediaBlob(zipPath),
@@ -137,6 +138,11 @@ export function WrappedClient({ api }: WrappedClientProps) {
               "The local archive statistics could not be calculated.",
             ),
           );
+          // Nothing about this archive ever reaches us, so the only person who
+          // can see why it failed is the person looking at the screen.
+          setErrorDetail(
+            queryError instanceof Error ? queryError.message : String(queryError),
+          );
         }
       })
       .finally(() => {
@@ -161,6 +167,7 @@ export function WrappedClient({ api }: WrappedClientProps) {
       theme={theme}
       loading={loading}
       error={error}
+      errorDetail={errorDetail}
       readMediaBlob={stableRead}
     />
   );
