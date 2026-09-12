@@ -352,7 +352,9 @@ const WRAPPED_FIRST_MESSAGE_SQL = `
 
 const WRAPPED_LONGEST_STREAK_SQL = `
   WITH active_days AS (
-    SELECT DISTINCT CAST(sent_at AS DATE) AS active_day
+    -- Local wall clock, matching every other calendar figure in the app. On
+    -- UTC a late-night message lands on the wrong day and breaks the run.
+    SELECT DISTINCT CAST(${localWallTimestampSql("sent_at")} AS DATE) AS active_day
     FROM messages
   ),
   numbered_days AS (
@@ -1146,7 +1148,10 @@ export async function wrappedStats(
     "longest streak",
     null,
     async () => {
-      const rows = await queryRows(connection, WRAPPED_LONGEST_STREAK_SQL);
+      // Now binds the local UTC offset, since the streak groups by local days.
+      const rows = await preparedRows(connection, WRAPPED_LONGEST_STREAK_SQL, [
+        localUtcOffsetSeconds(),
+      ]);
       return rows.length === 0 ? null : wrappedStreak(rows[0]);
     },
   );

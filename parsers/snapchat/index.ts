@@ -82,6 +82,30 @@ function isSnapchatArchiveName(fileName: string | undefined): boolean {
   return SNAPCHAT_ARCHIVE_NAME.test(stem);
 }
 
+/**
+ * Accounts that are in the friends list but are not friendships: you are your
+ * own first "friend" on Snapchat and would always win oldest-connection, and
+ * Team Snapchat is added to every account on the day it is created.
+ */
+const NON_FRIEND_ACCOUNTS: ReadonlySet<string> = new Set([
+  "teamsnapchat",
+  "team snapchat",
+  "snapchat",
+  "myai",
+  "my ai",
+]);
+
+function isRealFriend(username: string, ownerName: string): boolean {
+  const key = username.trim().toLocaleLowerCase();
+  if (key.length === 0) {
+    return false;
+  }
+  if (key === ownerName.trim().toLocaleLowerCase()) {
+    return false;
+  }
+  return !NON_FRIEND_ACCOUNTS.has(key);
+}
+
 const MEDIA_EXTENSIONS: ReadonlyMap<string, MediaKind> = new Map([
   ["jpg", "image"],
   ["jpeg", "image"],
@@ -112,6 +136,8 @@ interface ChatRecord {
   from: string | null;
   to: string | null;
   conversationTitle: string | null;
+  /** Stable group id, where the export carries one. Survives renames. */
+  conversationId: string | null;
   mediaType: string;
   content: string | null;
   sentAtMs: number;
@@ -164,14 +190,52 @@ function readBoolean(value: unknown): boolean | null {
 }
 
 /**
- * Snapchat writes `"2023-01-05 18:22:39 UTC"`. Some exports also carry
- * `Created(microseconds)`, which is preferred when present because it needs no
- * string parsing at all.
+ * Infer the unit of a numeric epoch from its magnitude.
+ *
+ * `Created(microseconds)` does not reliably hold microseconds: exports in the
+ * wild put plain milliseconds in it. Dividing those by 1000 lands every message
+ * on 1970-01-21, which is exactly what a real archive did. Each band below
+ * starts at 1973, so the reading is unambiguous for any date Snapchat can have.
  */
+export function normalizeEpochToMillis(value: number): number | null {
+  if (!Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  if (value >= 1e17) {
+    return Math.trunc(value / 1e6); // nanoseconds
+  }
+  if (value >= 1e14) {
+    return Math.trunc(value / 1e3); // microseconds
+  }
+  if (value >= 1e11) {
+    return Math.trunc(value); // milliseconds
+  }
+  if (value >= 1e8) {
+    return Math.trunc(value * 1e3); // seconds
+  }
+  return null;
+}
+
+/** Snapchat launched in 2011; anything earlier is a misread, not a memory. */
+const EARLIEST_PLAUSIBLE_MS = Date.UTC(2005, 0, 1);
+
+function plausible(millis: number | null): number | null {
+  return millis !== null && millis >= EARLIEST_PLAUSIBLE_MS ? millis : null;
+}
+
 export function parseSnapchatTimestamp(record: Record<string, unknown>): number | null {
-  const micros = pick(record, "Created(microseconds)", "Created_microseconds");
-  if (typeof micros === "number" && Number.isFinite(micros) && micros > 0) {
-    return Math.trunc(micros / 1000);
+  const numeric = pick(
+    record,
+    "Created(microseconds)",
+    "Created_microseconds",
+    "Created(millis)",
+    "Timestamp(millis)",
+  );
+  if (typeof numeric === "number") {
+    const normalized = plausible(normalizeEpochToMillis(numeric));
+    if (normalized !== null) {
+      return normalized;
+    }
   }
 
   const raw = readString(
@@ -181,16 +245,24 @@ export function parseSnapchatTimestamp(record: Record<string, unknown>): number 
     return null;
   }
 
+  // A bare number can also arrive as a string, in any of the same units.
+  if (/^\d+$/.test(raw)) {
+    const normalized = plausible(normalizeEpochToMillis(Number(raw)));
+    if (normalized !== null) {
+      return normalized;
+    }
+  }
+
   const isoish = raw
     .replace(/\s+UTC$/i, "Z")
     .replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}(?::\d{2})?)/, "$1T$2");
   const parsed = Date.parse(isoish.endsWith("Z") ? isoish : `${isoish}Z`);
   if (Number.isFinite(parsed)) {
-    return parsed;
+    return plausible(parsed);
   }
 
   const loose = Date.parse(raw);
-  return Number.isFinite(loose) ? loose : null;
+  return Number.isFinite(loose) ? plausible(loose) : null;
 }
 
 /** `"00:12:34"`, `"12:34"` or a plain seconds number. */
@@ -260,6 +332,9 @@ function toChatRecord(value: unknown): ChatRecord | null {
     from: readString(pick(value, "From", "Sender", "Username")),
     to: readString(pick(value, "To", "Recipient")),
     conversationTitle: readString(pick(value, "Conversation Title", "Group Name")),
+    conversationId: readString(
+      pick(value, "Conversation ID", "ConversationId", "Group ID", "Chat ID"),
+    ),
     mediaType: readString(pick(value, "Media Type", "Type")) ?? "TEXT",
     content: readString(pick(value, "Content", "Text", "Body")),
     sentAtMs,
@@ -276,7 +351,18 @@ function resolveConversation(
   groupKey: string,
   keyIsCategory: boolean,
   ownerName: string,
+  currentTitles?: ReadonlyMap<string, string>,
 ): string {
+  // A group that was renamed appears under each of its old names. Where the
+  // export carries a stable id, every message in that group is filed under the
+  // name the group goes by now, instead of splitting into one dead
+  // conversation per rename.
+  if (record.conversationId !== null) {
+    const current = currentTitles?.get(record.conversationId);
+    if (current !== undefined) {
+      return current;
+    }
+  }
   if (record.conversationTitle !== null) {
     return record.conversationTitle;
   }
@@ -380,6 +466,26 @@ async function parseChatHistory(
     return 0;
   }
 
+  // First pass: for every group id, keep the title from its newest message.
+  const currentTitles = new Map<string, string>();
+  const titleSeenAt = new Map<string, number>();
+  for (const value of Object.values(parsed)) {
+    if (!Array.isArray(value)) {
+      continue;
+    }
+    for (const entry of value) {
+      const record = toChatRecord(entry);
+      if (record?.conversationId == null || record.conversationTitle === null) {
+        continue;
+      }
+      const seenAt = titleSeenAt.get(record.conversationId) ?? -1;
+      if (record.sentAtMs > seenAt) {
+        titleSeenAt.set(record.conversationId, record.sentAtMs);
+        currentTitles.set(record.conversationId, record.conversationTitle);
+      }
+    }
+  }
+
   let emitted = 0;
   let ordinal = 0;
 
@@ -401,6 +507,7 @@ async function parseChatHistory(
         groupKey,
         keyIsCategory,
         ownerName,
+        currentTitles,
       );
       const sender = resolveSender(
         record,
@@ -523,6 +630,7 @@ async function parseSnapHistory(
 
 async function parseFriends(
   entries: ZipEntryMap,
+  ownerName: string,
   batch: ValidatedBatchEmitter,
   progress: (label: string) => void,
 ): Promise<number> {
@@ -548,10 +656,15 @@ async function parseFriends(
       continue;
     }
     const username = readString(pick(entry, "Username", "User Name"));
-    if (username === null) {
+    if (username === null || !isRealFriend(username, ownerName)) {
       continue;
     }
-    const occurredAtMs = parseSnapchatTimestamp(entry) ?? 0;
+    // Friends with no recorded date would all tie at the epoch and win
+    // "longest friendship" over everyone real, so they are left undated.
+    const occurredAtMs = parseSnapchatTimestamp(entry);
+    if (occurredAtMs === null) {
+      continue;
+    }
     const payload = stringifyJson(
       {
         href: null,
@@ -783,7 +896,7 @@ export const snapchatParser: DataParser = {
 
     await parseChatHistory(entries, ownerName, batch, report);
     await parseSnapHistory(entries, ownerName, batch, report);
-    await parseFriends(entries, batch, report);
+    await parseFriends(entries, ownerName, batch, report);
     await parseCalls(entries, ownerName, batch, report);
     await parseMediaEntries(entries, batch, report);
 

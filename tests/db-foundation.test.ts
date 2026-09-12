@@ -400,7 +400,11 @@ describe("DuckDB named-query SQL", () => {
     expect(readNumber(arabic as SqlRow, "word_count")).toBe(1);
 
     expect(queryRows(wrapped.firstMessage)).toHaveLength(1);
-    const streak = oneRow(queryRows(wrapped.longestStreak));
+    // The streak groups by local days now, so it binds the UTC offset like
+    // every other calendar query.
+    const streak = oneRow(
+      preparedRows(wrapped.longestStreak, [localUtcOffsetSeconds()]),
+    );
     expect(readNumber(streak, "streak_days")).toBe(2);
 
     const mutuals = queryRows(wrapped.mutualFollows);

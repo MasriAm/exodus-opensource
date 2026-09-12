@@ -1049,7 +1049,11 @@ export function WrappedDeck({
         render: () => (
           <SlideShell
             title={<SlideTitle accent="slate">The Arc</SlideTitle>}
-            subline="Two chats that had a beginning, a middle and an ending."
+            subline={
+              situationship && slowFade
+                ? "Two chats that had a beginning, a middle and an ending."
+                : "A chat that had a beginning, a middle and an ending."
+            }
           >
             <div className="grid gap-3 sm:grid-cols-2">
               {situationship ? (

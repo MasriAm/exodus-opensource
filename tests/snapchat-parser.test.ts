@@ -6,6 +6,7 @@ import { normalizedRowSchema } from "../lib/schema";
 import { ZipEntryMap } from "../lib/zip";
 import { detectParser, parsers } from "../parsers/registry";
 import {
+  normalizeEpochToMillis,
   parseDurationSeconds,
   parseSnapchatTimestamp,
   snapchatMediaKind,
@@ -630,6 +631,147 @@ describe("conversation attribution", () => {
         (row) => row.table === "messages",
       );
       expect(messages[0]).toMatchObject({ conversation: "maya.kh" });
+    } finally {
+      await archive.close();
+    }
+  });
+});
+
+describe("epoch units", () => {
+  /**
+   * `Created(microseconds)` does not reliably hold microseconds. A real export
+   * put plain milliseconds in it; dividing by 1000 put ~90k messages on
+   * 1970-01-21 and wrecked every date-derived figure in the app.
+   */
+  it("reads a millisecond value out of the microseconds field", () => {
+    const realMs = Date.UTC(2026, 8, 8, 16, 54);
+    expect(
+      parseSnapchatTimestamp({ "Created(microseconds)": realMs }),
+    ).toBe(realMs);
+  });
+
+  it("still reads genuine microseconds", () => {
+    const realMs = Date.UTC(2023, 0, 5, 18, 22, 39);
+    expect(
+      parseSnapchatTimestamp({ "Created(microseconds)": realMs * 1000 }),
+    ).toBe(realMs);
+  });
+
+  it("reads seconds and nanoseconds by magnitude too", () => {
+    const realMs = Date.UTC(2023, 0, 5, 18, 22, 39);
+    expect(normalizeEpochToMillis(Math.trunc(realMs / 1000))).toBe(
+      Math.trunc(realMs / 1000) * 1000,
+    );
+    expect(normalizeEpochToMillis(realMs * 1_000_000)).toBe(realMs);
+    expect(normalizeEpochToMillis(realMs)).toBe(realMs);
+  });
+
+  it("refuses a value that would land near the epoch", () => {
+    // 1970-01-21 is the fingerprint of the bug, never a real Snapchat date.
+    expect(parseSnapchatTimestamp({ Created: "1970-01-21 16:54:46 UTC" })).toBeNull();
+    expect(normalizeEpochToMillis(0)).toBeNull();
+    expect(normalizeEpochToMillis(-5)).toBeNull();
+  });
+
+  it("accepts a numeric epoch supplied as a string", () => {
+    const realMs = Date.UTC(2024, 5, 1, 12, 0);
+    expect(parseSnapchatTimestamp({ Created: String(realMs) })).toBe(realMs);
+  });
+});
+
+describe("friends list hygiene", () => {
+  const friendsArchive = (usernames: string[]) =>
+    makeArchive([
+      { path: "json/account.json", body: ACCOUNT },
+      { path: "json/chat_history.json", body: {} },
+      {
+        path: "json/friends.json",
+        body: {
+          Friends: usernames.map((Username) => ({
+            Username,
+            "Display Name": Username,
+            "Creation Timestamp": "2019-02-14 10:00:00 UTC",
+          })),
+        },
+      },
+    ]);
+
+  it("does not count you as your own friend", async () => {
+    // You are your own first friend on Snapchat, so you would always win
+    // "longest friendship" over every real person.
+    const archive = await friendsArchive(["yousef.demo", "maya.kh"]);
+    try {
+      const followers = (await collect(archive)).filter(
+        (row) => row.table === "events" && row.kind === "follower",
+      );
+      const names = followers.map((row) =>
+        row.table === "events" ? JSON.parse(row.payload).value : null,
+      );
+      expect(names).toEqual(["maya.kh"]);
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("drops Team Snapchat and My AI, which everyone is given", async () => {
+    const archive = await friendsArchive([
+      "teamsnapchat",
+      "myai",
+      "maya.kh",
+    ]);
+    try {
+      const followers = (await collect(archive)).filter(
+        (row) => row.table === "events" && row.kind === "follower",
+      );
+      expect(followers).toHaveLength(1);
+    } finally {
+      await archive.close();
+    }
+  });
+});
+
+describe("renamed group chats", () => {
+  it("files a renamed group under the name it goes by now", async () => {
+    const archive = await makeArchive([
+      { path: "json/account.json", body: ACCOUNT },
+      {
+        path: "json/chat_history.json",
+        body: {
+          "Received Saved Chat History": [
+            {
+              From: "maya.kh",
+              "Conversation ID": "g-1",
+              "Conversation Title": "the trip",
+              "Media Type": "TEXT",
+              Created: "2022-01-01 12:00:00 UTC",
+              Content: "old name",
+              IsSender: false,
+            },
+            {
+              From: "maya.kh",
+              "Conversation ID": "g-1",
+              "Conversation Title": "the coven",
+              "Media Type": "TEXT",
+              Created: "2024-06-01 12:00:00 UTC",
+              Content: "new name",
+              IsSender: false,
+            },
+          ],
+        },
+      },
+    ]);
+
+    try {
+      const messages = (await collect(archive)).filter(
+        (row) => row.table === "messages",
+      );
+      // Both messages belong to one live group, not two dead ones.
+      expect(messages).toHaveLength(2);
+      expect(
+        new Set(
+          messages.map((row) => (row.table === "messages" ? row.conversation : "")),
+        ),
+      ).toEqual(new Set(["the coven"]));
     } finally {
       await archive.close();
     }
