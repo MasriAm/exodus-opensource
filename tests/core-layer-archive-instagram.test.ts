@@ -434,3 +434,61 @@ describe("Instagram parser plugin", () => {
     }
   });
 });
+
+describe("resilient archive opening", () => {
+  /**
+   * A media export runs to tens of thousands of entries. One repeated or odd
+   * filename among them used to throw away every other file in the part, which
+   * is how a 2 GiB Snapchat memories zip became "could not be recognized".
+   */
+  it("keeps the archive when a filename repeats, preferring the first", async () => {
+    const blobWriter = new BlobWriter("application/zip");
+    const zipWriter = new ZipWriter(blobWriter, { useWebWorkers: false });
+    await zipWriter.add("memories/dup.jpg", new TextReader("first"), {
+      level: 0,
+      useWebWorkers: false,
+    });
+    // Distinct entry names that normalize onto the same path — which is how
+    // a real archive ends up with a collision.
+    await zipWriter.add("memories/./dup.jpg", new TextReader("second"), {
+      level: 0,
+      useWebWorkers: false,
+    });
+    await zipWriter.add("memories/other.jpg", new TextReader("kept"), {
+      level: 0,
+      useWebWorkers: false,
+    });
+    const archive = await ZipEntryMap.fromBlob(await zipWriter.close());
+
+    try {
+      expect(archive.paths()).toEqual(["memories/dup.jpg", "memories/other.jpg"]);
+      // First occurrence wins, so resolution stays deterministic.
+      expect(await archive.readText("memories/dup.jpg")).toBe("first");
+      expect(await archive.readText("memories/other.jpg")).toBe("kept");
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("drops an unsafe entry without exposing it or losing the rest", async () => {
+    const blobWriter = new BlobWriter("application/zip");
+    const zipWriter = new ZipWriter(blobWriter, { useWebWorkers: false });
+    await zipWriter.add("../escape.txt", new TextReader("nope"), {
+      level: 0,
+      useWebWorkers: false,
+    });
+    await zipWriter.add("memories/safe.jpg", new TextReader("kept"), {
+      level: 0,
+      useWebWorkers: false,
+    });
+    const archive = await ZipEntryMap.fromBlob(await zipWriter.close());
+
+    try {
+      expect(archive.paths()).toEqual(["memories/safe.jpg"]);
+      expect(archive.has("../escape.txt")).toBe(false);
+      expect(await archive.readText("memories/safe.jpg")).toBe("kept");
+    } finally {
+      await archive.close();
+    }
+  });
+});

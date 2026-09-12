@@ -6,6 +6,7 @@ import { normalizedRowSchema } from "../lib/schema";
 import { ZipEntryMap } from "../lib/zip";
 import { detectParser, parsers } from "../parsers/registry";
 import {
+  normalizeEpochToMillis,
   parseDurationSeconds,
   parseSnapchatTimestamp,
   snapchatMediaKind,
@@ -429,7 +430,348 @@ describe("Snapchat friends, snaps and calls", () => {
     ]);
 
     try {
-      await expect(collect(archive)).rejects.toThrow(/No Snapchat/);
+      await expect(collect(archive)).rejects.toThrow(
+        /no chats, snaps, friends or media/,
+      );
+    } finally {
+      await archive.close();
+    }
+  });
+});
+
+describe("split Snapchat exports", () => {
+  /**
+   * Snapchat hands out `mydata~<id>.zip` plus `-2` … `-9` continuation parts.
+   * Only the first carries the JSON; the rest are gigabytes of memories. Every
+   * one of them has to be recognized or the import stops at "unrecognized".
+   */
+  it("recognizes a media-only continuation part by its wrapper folder", async () => {
+    const archive = await makeArchive([
+      { path: "mydata~1788886440253/memories/2023-01-05_abc.jpg", body: {} },
+    ]);
+    try {
+      expect(detectParser(archive.paths())?.id).toBe("snapchat");
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("recognizes a part by its archive name when nothing inside names Snapchat", () => {
+    const flatPaths = ["memories/2023-01-05_abc.jpg", "memories/2023-01-06_def.mp4"];
+
+    expect(detectParser(flatPaths)).toBeNull();
+    expect(
+      detectParser(flatPaths, { fileName: "mydata~1788886440253-7.zip" })?.id,
+    ).toBe("snapchat");
+  });
+
+  it("accepts every continuation suffix Snapchat issues", () => {
+    for (const name of [
+      "mydata~1788886440253.zip",
+      "mydata~1788886440253-2.zip",
+      "mydata~1788886440253-9.zip",
+    ]) {
+      expect(detectParser([], { fileName: name })?.id).toBe("snapchat");
+    }
+  });
+
+  it("does not claim an unrelated archive on the strength of a name", () => {
+    expect(detectParser([], { fileName: "holiday-photos.zip" })).toBeNull();
+    expect(detectParser([], { fileName: "mydata-notsnapchat.zip" })).toBeNull();
+  });
+
+  it("recognizes a single category export that has no chat history in it", async () => {
+    const archive = await makeArchive([
+      { path: "json/friends.json", body: { Friends: [] } },
+    ]);
+    try {
+      expect(detectParser(archive.paths())?.id).toBe("snapchat");
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("turns a memories part into media rows instead of refusing it", async () => {
+    const archive = await makeArchive([
+      { path: "mydata~123/memories/2023-04-12_one.jpg", body: {} },
+      { path: "mydata~123/memories/2021-11-02_two.mp4", body: {} },
+      { path: "mydata~123/chat_media/2022-06-01_three.png", body: {} },
+    ]);
+
+    try {
+      const rows = await collect(archive);
+      const media = rows.filter((row) => row.table === "media");
+
+      expect(media).toHaveLength(3);
+      expect(media.map((row) => row.table === "media" && row.kind).sort()).toEqual([
+        "image",
+        "image",
+        "video",
+      ]);
+      // The date in the filename is the only timestamp these files carry.
+      const first = media.find(
+        (row) => row.table === "media" && row.zip_path.endsWith("2023-04-12_one.jpg"),
+      );
+      expect(first?.table === "media" && first.taken_at_ms).toBe(
+        Date.UTC(2023, 3, 12),
+      );
+      expect(first?.table === "media" && first.conversation).toBe("Memories");
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("still refuses a part with nothing readable in any category", async () => {
+    const archive = await makeArchive([
+      { path: "mydata~123/readme.txt", body: {} },
+    ]);
+    try {
+      await expect(collect(archive)).rejects.toThrow(/no chats, snaps, friends or media/);
+    } finally {
+      await archive.close();
+    }
+  });
+});
+
+describe("conversation attribution", () => {
+  /**
+   * Snapchat has shipped both conventions for `From` on sent messages. If the
+   * owner's own name is allowed to become a thread, every outgoing message
+   * collapses into one fake conversation with yourself, which then outranks
+   * every real person in "who you talked to most".
+   */
+  it("never files your own messages under your own name", async () => {
+    const archive = await makeArchive([
+      { path: "json/account.json", body: ACCOUNT },
+      {
+        path: "json/chat_history.json",
+        body: {
+          "Sent Saved Chat History": [
+            {
+              // This export names the sender, not the recipient.
+              From: "yousef.demo",
+              To: "maya.kh",
+              "Media Type": "TEXT",
+              Created: "2022-02-02 12:05:00 UTC",
+              Content: "on my way",
+              IsSender: true,
+            },
+          ],
+        },
+      },
+    ]);
+
+    try {
+      const messages = (await collect(archive)).filter(
+        (row) => row.table === "messages",
+      );
+      expect(messages[0]).toMatchObject({
+        conversation: "maya.kh",
+        sender: "yousef.demo",
+      });
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("still uses From when it is the counterparty", async () => {
+    const archive = await makeArchive([
+      { path: "json/account.json", body: ACCOUNT },
+      {
+        path: "json/chat_history.json",
+        body: {
+          "Sent Saved Chat History": [
+            {
+              // The other convention: From already names the recipient.
+              From: "maya.kh",
+              "Media Type": "TEXT",
+              Created: "2022-02-02 12:05:00 UTC",
+              Content: "on my way",
+              IsSender: true,
+            },
+          ],
+        },
+      },
+    ]);
+
+    try {
+      const messages = (await collect(archive)).filter(
+        (row) => row.table === "messages",
+      );
+      expect(messages[0]).toMatchObject({
+        conversation: "maya.kh",
+        sender: "yousef.demo",
+      });
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("lets the per-friend key win over a misleading From", async () => {
+    const archive = await makeArchive([
+      { path: "json/account.json", body: ACCOUNT },
+      {
+        path: "json/chat_history.json",
+        body: {
+          "maya.kh": [
+            {
+              From: "yousef.demo",
+              "Media Type": "TEXT",
+              Created: "2022-02-02 12:05:00 UTC",
+              Content: "on my way",
+              IsSender: true,
+            },
+          ],
+        },
+      },
+    ]);
+
+    try {
+      const messages = (await collect(archive)).filter(
+        (row) => row.table === "messages",
+      );
+      expect(messages[0]).toMatchObject({ conversation: "maya.kh" });
+    } finally {
+      await archive.close();
+    }
+  });
+});
+
+describe("epoch units", () => {
+  /**
+   * `Created(microseconds)` does not reliably hold microseconds. A real export
+   * put plain milliseconds in it; dividing by 1000 put ~90k messages on
+   * 1970-01-21 and wrecked every date-derived figure in the app.
+   */
+  it("reads a millisecond value out of the microseconds field", () => {
+    const realMs = Date.UTC(2026, 8, 8, 16, 54);
+    expect(
+      parseSnapchatTimestamp({ "Created(microseconds)": realMs }),
+    ).toBe(realMs);
+  });
+
+  it("still reads genuine microseconds", () => {
+    const realMs = Date.UTC(2023, 0, 5, 18, 22, 39);
+    expect(
+      parseSnapchatTimestamp({ "Created(microseconds)": realMs * 1000 }),
+    ).toBe(realMs);
+  });
+
+  it("reads seconds and nanoseconds by magnitude too", () => {
+    const realMs = Date.UTC(2023, 0, 5, 18, 22, 39);
+    expect(normalizeEpochToMillis(Math.trunc(realMs / 1000))).toBe(
+      Math.trunc(realMs / 1000) * 1000,
+    );
+    expect(normalizeEpochToMillis(realMs * 1_000_000)).toBe(realMs);
+    expect(normalizeEpochToMillis(realMs)).toBe(realMs);
+  });
+
+  it("refuses a value that would land near the epoch", () => {
+    // 1970-01-21 is the fingerprint of the bug, never a real Snapchat date.
+    expect(parseSnapchatTimestamp({ Created: "1970-01-21 16:54:46 UTC" })).toBeNull();
+    expect(normalizeEpochToMillis(0)).toBeNull();
+    expect(normalizeEpochToMillis(-5)).toBeNull();
+  });
+
+  it("accepts a numeric epoch supplied as a string", () => {
+    const realMs = Date.UTC(2024, 5, 1, 12, 0);
+    expect(parseSnapchatTimestamp({ Created: String(realMs) })).toBe(realMs);
+  });
+});
+
+describe("friends list hygiene", () => {
+  const friendsArchive = (usernames: string[]) =>
+    makeArchive([
+      { path: "json/account.json", body: ACCOUNT },
+      { path: "json/chat_history.json", body: {} },
+      {
+        path: "json/friends.json",
+        body: {
+          Friends: usernames.map((Username) => ({
+            Username,
+            "Display Name": Username,
+            "Creation Timestamp": "2019-02-14 10:00:00 UTC",
+          })),
+        },
+      },
+    ]);
+
+  it("does not count you as your own friend", async () => {
+    // You are your own first friend on Snapchat, so you would always win
+    // "longest friendship" over every real person.
+    const archive = await friendsArchive(["yousef.demo", "maya.kh"]);
+    try {
+      const followers = (await collect(archive)).filter(
+        (row) => row.table === "events" && row.kind === "follower",
+      );
+      const names = followers.map((row) =>
+        row.table === "events" ? JSON.parse(row.payload).value : null,
+      );
+      expect(names).toEqual(["maya.kh"]);
+    } finally {
+      await archive.close();
+    }
+  });
+
+  it("drops Team Snapchat and My AI, which everyone is given", async () => {
+    const archive = await friendsArchive([
+      "teamsnapchat",
+      "myai",
+      "maya.kh",
+    ]);
+    try {
+      const followers = (await collect(archive)).filter(
+        (row) => row.table === "events" && row.kind === "follower",
+      );
+      expect(followers).toHaveLength(1);
+    } finally {
+      await archive.close();
+    }
+  });
+});
+
+describe("renamed group chats", () => {
+  it("files a renamed group under the name it goes by now", async () => {
+    const archive = await makeArchive([
+      { path: "json/account.json", body: ACCOUNT },
+      {
+        path: "json/chat_history.json",
+        body: {
+          "Received Saved Chat History": [
+            {
+              From: "maya.kh",
+              "Conversation ID": "g-1",
+              "Conversation Title": "the trip",
+              "Media Type": "TEXT",
+              Created: "2022-01-01 12:00:00 UTC",
+              Content: "old name",
+              IsSender: false,
+            },
+            {
+              From: "maya.kh",
+              "Conversation ID": "g-1",
+              "Conversation Title": "the coven",
+              "Media Type": "TEXT",
+              Created: "2024-06-01 12:00:00 UTC",
+              Content: "new name",
+              IsSender: false,
+            },
+          ],
+        },
+      },
+    ]);
+
+    try {
+      const messages = (await collect(archive)).filter(
+        (row) => row.table === "messages",
+      );
+      // Both messages belong to one live group, not two dead ones.
+      expect(messages).toHaveLength(2);
+      expect(
+        new Set(
+          messages.map((row) => (row.table === "messages" ? row.conversation : "")),
+        ),
+      ).toEqual(new Set(["the coven"]));
     } finally {
       await archive.close();
     }

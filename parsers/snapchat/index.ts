@@ -16,6 +16,7 @@ import { ValidatedBatchEmitter } from "../batch";
 import { parseJson, stringifyJson } from "../json";
 import {
   entryBasename,
+  entryPathSegments,
   hasFacebookMarker,
   hasInstagramMarker,
 } from "../paths";
@@ -25,6 +26,104 @@ import type { ZipEntryMap } from "../../lib/zip";
 const MAX_JSON_ENTRY_BYTES = 48 * 1024 * 1024;
 
 const PLATFORM = "snapchat";
+
+/**
+ * Every JSON file Snapchat ships across the ten export categories. Any one of
+ * them identifies the archive, which matters because a category-selected
+ * export may contain only one of them.
+ */
+const SNAPCHAT_JSON_BASENAMES: ReadonlySet<string> = new Set([
+  "chat_history.json",
+  "snap_history.json",
+  "talk_history.json",
+  "memories_history.json",
+  "account.json",
+  "account_history.json",
+  "friends.json",
+  "user_profile.json",
+  "subscriptions.json",
+  "location_history.json",
+  "shared_story.json",
+  "story_history.json",
+  "spotlight.json",
+  "purchase_history.json",
+  "support_history.json",
+  "search_history.json",
+  "connected_apps.json",
+  "bitmoji.json",
+  "ranking.json",
+  "snap_ai.json",
+  "in_app_surveys.json",
+  "terms_history.json",
+  "countdowns.json",
+  "community_history.json",
+]);
+
+/** Folders that hold the actual bytes rather than the metadata. */
+const SNAPCHAT_MEDIA_DIRECTORIES: ReadonlySet<string> = new Set([
+  "memories",
+  "chat_media",
+  "shared_stories",
+  "my_sounds",
+  "my_custom_stickers",
+  "my_lenses",
+  "selfie",
+  "cameos",
+]);
+
+/** `mydata~1788886440253.zip`, and its `-2` … `-9` continuation parts. */
+const SNAPCHAT_ARCHIVE_NAME = /^mydata~\d+(?:-\d+)?$/i;
+
+function isSnapchatArchiveName(fileName: string | undefined): boolean {
+  if (typeof fileName !== "string") {
+    return false;
+  }
+  const stem = entryBasename(fileName).replace(/\.zip$/i, "").trim();
+  return SNAPCHAT_ARCHIVE_NAME.test(stem);
+}
+
+/**
+ * Accounts that are in the friends list but are not friendships: you are your
+ * own first "friend" on Snapchat and would always win oldest-connection, and
+ * Team Snapchat is added to every account on the day it is created.
+ */
+const NON_FRIEND_ACCOUNTS: ReadonlySet<string> = new Set([
+  "teamsnapchat",
+  "team snapchat",
+  "snapchat",
+  "myai",
+  "my ai",
+]);
+
+function isRealFriend(username: string, ownerName: string): boolean {
+  const key = username.trim().toLocaleLowerCase();
+  if (key.length === 0) {
+    return false;
+  }
+  if (key === ownerName.trim().toLocaleLowerCase()) {
+    return false;
+  }
+  return !NON_FRIEND_ACCOUNTS.has(key);
+}
+
+const MEDIA_EXTENSIONS: ReadonlyMap<string, MediaKind> = new Map([
+  ["jpg", "image"],
+  ["jpeg", "image"],
+  ["png", "image"],
+  ["gif", "image"],
+  ["webp", "image"],
+  ["heic", "image"],
+  ["mp4", "video"],
+  ["mov", "video"],
+  ["webm", "video"],
+  ["m4a", "audio"],
+  ["mp3", "audio"],
+  ["aac", "audio"],
+  ["opus", "audio"],
+]);
+
+/** Snapchat names memories `2023-01-05_<hash>.jpg`. */
+const MEDIA_DATE_PREFIX = /^(\d{4})-(\d{2})-(\d{2})/;
 
 /** Top-level keys in the category shape, which are labels rather than people. */
 const CATEGORY_KEY_PATTERN =
@@ -37,6 +136,8 @@ interface ChatRecord {
   from: string | null;
   to: string | null;
   conversationTitle: string | null;
+  /** Stable group id, where the export carries one. Survives renames. */
+  conversationId: string | null;
   mediaType: string;
   content: string | null;
   sentAtMs: number;
@@ -89,14 +190,52 @@ function readBoolean(value: unknown): boolean | null {
 }
 
 /**
- * Snapchat writes `"2023-01-05 18:22:39 UTC"`. Some exports also carry
- * `Created(microseconds)`, which is preferred when present because it needs no
- * string parsing at all.
+ * Infer the unit of a numeric epoch from its magnitude.
+ *
+ * `Created(microseconds)` does not reliably hold microseconds: exports in the
+ * wild put plain milliseconds in it. Dividing those by 1000 lands every message
+ * on 1970-01-21, which is exactly what a real archive did. Each band below
+ * starts at 1973, so the reading is unambiguous for any date Snapchat can have.
  */
+export function normalizeEpochToMillis(value: number): number | null {
+  if (!Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  if (value >= 1e17) {
+    return Math.trunc(value / 1e6); // nanoseconds
+  }
+  if (value >= 1e14) {
+    return Math.trunc(value / 1e3); // microseconds
+  }
+  if (value >= 1e11) {
+    return Math.trunc(value); // milliseconds
+  }
+  if (value >= 1e8) {
+    return Math.trunc(value * 1e3); // seconds
+  }
+  return null;
+}
+
+/** Snapchat launched in 2011; anything earlier is a misread, not a memory. */
+const EARLIEST_PLAUSIBLE_MS = Date.UTC(2005, 0, 1);
+
+function plausible(millis: number | null): number | null {
+  return millis !== null && millis >= EARLIEST_PLAUSIBLE_MS ? millis : null;
+}
+
 export function parseSnapchatTimestamp(record: Record<string, unknown>): number | null {
-  const micros = pick(record, "Created(microseconds)", "Created_microseconds");
-  if (typeof micros === "number" && Number.isFinite(micros) && micros > 0) {
-    return Math.trunc(micros / 1000);
+  const numeric = pick(
+    record,
+    "Created(microseconds)",
+    "Created_microseconds",
+    "Created(millis)",
+    "Timestamp(millis)",
+  );
+  if (typeof numeric === "number") {
+    const normalized = plausible(normalizeEpochToMillis(numeric));
+    if (normalized !== null) {
+      return normalized;
+    }
   }
 
   const raw = readString(
@@ -106,16 +245,24 @@ export function parseSnapchatTimestamp(record: Record<string, unknown>): number 
     return null;
   }
 
+  // A bare number can also arrive as a string, in any of the same units.
+  if (/^\d+$/.test(raw)) {
+    const normalized = plausible(normalizeEpochToMillis(Number(raw)));
+    if (normalized !== null) {
+      return normalized;
+    }
+  }
+
   const isoish = raw
     .replace(/\s+UTC$/i, "Z")
     .replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}(?::\d{2})?)/, "$1T$2");
   const parsed = Date.parse(isoish.endsWith("Z") ? isoish : `${isoish}Z`);
   if (Number.isFinite(parsed)) {
-    return parsed;
+    return plausible(parsed);
   }
 
   const loose = Date.parse(raw);
-  return Number.isFinite(loose) ? loose : null;
+  return Number.isFinite(loose) ? plausible(loose) : null;
 }
 
 /** `"00:12:34"`, `"12:34"` or a plain seconds number. */
@@ -185,6 +332,9 @@ function toChatRecord(value: unknown): ChatRecord | null {
     from: readString(pick(value, "From", "Sender", "Username")),
     to: readString(pick(value, "To", "Recipient")),
     conversationTitle: readString(pick(value, "Conversation Title", "Group Name")),
+    conversationId: readString(
+      pick(value, "Conversation ID", "ConversationId", "Group ID", "Chat ID"),
+    ),
     mediaType: readString(pick(value, "Media Type", "Type")) ?? "TEXT",
     content: readString(pick(value, "Content", "Text", "Body")),
     sentAtMs,
@@ -200,16 +350,43 @@ function resolveConversation(
   record: ChatRecord,
   groupKey: string,
   keyIsCategory: boolean,
+  ownerName: string,
+  currentTitles?: ReadonlyMap<string, string>,
 ): string {
+  // A group that was renamed appears under each of its old names. Where the
+  // export carries a stable id, every message in that group is filed under the
+  // name the group goes by now, instead of splitting into one dead
+  // conversation per rename.
+  if (record.conversationId !== null) {
+    const current = currentTitles?.get(record.conversationId);
+    if (current !== undefined) {
+      return current;
+    }
+  }
   if (record.conversationTitle !== null) {
     return record.conversationTitle;
   }
+  // The per-friend shape keys each array by the thread itself, which is the
+  // most reliable answer available.
   if (!keyIsCategory) {
     return groupKey;
   }
-  // In the category shape Snapchat stores the counterparty in `From` for both
-  // directions, so it is the thread name even on messages you sent.
-  return record.from ?? record.to ?? "Unknown";
+
+  // In the category shape the thread is whichever side is not the archive
+  // owner. Snapchat has shipped both conventions for `From` on sent messages —
+  // some exports name the recipient, others name you — and trusting it blindly
+  // files your own outgoing messages under your own name, inventing a
+  // conversation with yourself that then outranks every real person.
+  const owner = ownerName.trim().toLocaleLowerCase();
+  const parties = [record.from, record.to].filter(
+    (value): value is string =>
+      typeof value === "string" && value.trim().length > 0,
+  );
+  const counterparty = parties.find(
+    (value) => value.trim().toLocaleLowerCase() !== owner,
+  );
+
+  return counterparty ?? parties[0] ?? "Unknown";
 }
 
 function resolveSender(
@@ -289,6 +466,26 @@ async function parseChatHistory(
     return 0;
   }
 
+  // First pass: for every group id, keep the title from its newest message.
+  const currentTitles = new Map<string, string>();
+  const titleSeenAt = new Map<string, number>();
+  for (const value of Object.values(parsed)) {
+    if (!Array.isArray(value)) {
+      continue;
+    }
+    for (const entry of value) {
+      const record = toChatRecord(entry);
+      if (record?.conversationId == null || record.conversationTitle === null) {
+        continue;
+      }
+      const seenAt = titleSeenAt.get(record.conversationId) ?? -1;
+      if (record.sentAtMs > seenAt) {
+        titleSeenAt.set(record.conversationId, record.sentAtMs);
+        currentTitles.set(record.conversationId, record.conversationTitle);
+      }
+    }
+  }
+
   let emitted = 0;
   let ordinal = 0;
 
@@ -305,7 +502,13 @@ async function parseChatHistory(
         continue;
       }
 
-      const conversation = resolveConversation(record, groupKey, keyIsCategory);
+      const conversation = resolveConversation(
+        record,
+        groupKey,
+        keyIsCategory,
+        ownerName,
+        currentTitles,
+      );
       const sender = resolveSender(
         record,
         conversation,
@@ -363,6 +566,7 @@ async function parseChatHistory(
 
 async function parseSnapHistory(
   entries: ZipEntryMap,
+  ownerName: string,
   batch: ValidatedBatchEmitter,
   progress: (label: string) => void,
 ): Promise<number> {
@@ -395,6 +599,7 @@ async function parseSnapHistory(
         record,
         groupKey,
         isCategoryKey(groupKey),
+        ownerName,
       );
 
       await batch.add(
@@ -425,6 +630,7 @@ async function parseSnapHistory(
 
 async function parseFriends(
   entries: ZipEntryMap,
+  ownerName: string,
   batch: ValidatedBatchEmitter,
   progress: (label: string) => void,
 ): Promise<number> {
@@ -450,10 +656,15 @@ async function parseFriends(
       continue;
     }
     const username = readString(pick(entry, "Username", "User Name"));
-    if (username === null) {
+    if (username === null || !isRealFriend(username, ownerName)) {
       continue;
     }
-    const occurredAtMs = parseSnapchatTimestamp(entry) ?? 0;
+    // Friends with no recorded date would all tie at the epoch and win
+    // "longest friendship" over everyone real, so they are left undated.
+    const occurredAtMs = parseSnapchatTimestamp(entry);
+    if (occurredAtMs === null) {
+      continue;
+    }
     const payload = stringifyJson(
       {
         href: null,
@@ -487,6 +698,7 @@ async function parseFriends(
 
 async function parseCalls(
   entries: ZipEntryMap,
+  ownerName: string,
   batch: ValidatedBatchEmitter,
   progress: (label: string) => void,
 ): Promise<number> {
@@ -523,7 +735,12 @@ async function parseCalls(
       const conversation =
         record === null
           ? groupKey
-          : resolveConversation(record, groupKey, isCategoryKey(groupKey));
+          : resolveConversation(
+              record,
+              groupKey,
+              isCategoryKey(groupKey),
+              ownerName,
+            );
       const type = (readString(pick(entry, "Type", "Media Type")) ?? "").toUpperCase();
 
       await batch.add(
@@ -553,17 +770,106 @@ async function parseCalls(
   return emitted;
 }
 
+/**
+ * Register the media a part actually carries.
+ *
+ * A 9-part export puts the JSON in one zip and gigabytes of memories in the
+ * rest. Those parts used to be rejected outright; walking their entries costs
+ * nothing (the central directory is already open, no bytes are read) and turns
+ * each one into real rows instead of an error.
+ */
+async function parseMediaEntries(
+  entries: ZipEntryMap,
+  batch: ValidatedBatchEmitter,
+  progress: (label: string) => void,
+): Promise<number> {
+  const mediaPaths = entries.paths().filter((path) => {
+    const segments = entryPathSegments(path).map((segment) =>
+      segment.toLowerCase(),
+    );
+    if (!segments.some((segment) => SNAPCHAT_MEDIA_DIRECTORIES.has(segment))) {
+      return false;
+    }
+    const extension = entryBasename(path).split(".").pop()?.toLowerCase() ?? "";
+    return MEDIA_EXTENSIONS.has(extension);
+  });
+
+  if (mediaPaths.length === 0) {
+    return 0;
+  }
+
+  progress(`Cataloguing ${mediaPaths.length.toLocaleString()} media files…`);
+
+  for (const path of mediaPaths) {
+    const basename = entryBasename(path);
+    const extension = basename.split(".").pop()?.toLowerCase() ?? "";
+    const kind = MEDIA_EXTENSIONS.get(extension) ?? "other";
+
+    const dateMatch = MEDIA_DATE_PREFIX.exec(basename);
+    const takenAtMs =
+      dateMatch === null
+        ? null
+        : Date.UTC(
+            Number.parseInt(dateMatch[1], 10),
+            Number.parseInt(dateMatch[2], 10) - 1,
+            Number.parseInt(dateMatch[3], 10),
+          );
+
+    const folder = entryPathSegments(path)
+      .map((segment) => segment.toLowerCase())
+      .find((segment) => SNAPCHAT_MEDIA_DIRECTORIES.has(segment));
+
+    await batch.add(
+      {
+        table: "media",
+        platform: PLATFORM,
+        zip_path: path,
+        kind,
+        taken_at_ms:
+          takenAtMs !== null && Number.isFinite(takenAtMs) ? takenAtMs : null,
+        conversation: folder === "chat_media" ? null : "Memories",
+      },
+      path,
+      "Cataloguing Snapchat media…",
+    );
+  }
+
+  await batch.flush("Cataloguing Snapchat media…");
+  return mediaPaths.length;
+}
+
 export const snapchatParser: DataParser = {
   id: "snapchat",
   displayName: "Snapchat",
 
-  detect(entryPaths) {
+  detect(entryPaths, context) {
     if (hasInstagramMarker(entryPaths) || hasFacebookMarker(entryPaths)) {
       return false;
     }
+
+    // A split export names itself: only one part carries the JSON, so the
+    // other eight are recognizable by the archive name and nothing else.
+    if (isSnapchatArchiveName(context?.fileName)) {
+      return true;
+    }
+
     return entryPaths.some((path) => {
-      const basename = entryBasename(path).toLowerCase();
-      return basename === "chat_history.json" || basename === "snap_history.json";
+      if (SNAPCHAT_JSON_BASENAMES.has(entryBasename(path).toLowerCase())) {
+        return true;
+      }
+      const segments = entryPathSegments(path).map((segment) =>
+        segment.toLowerCase(),
+      );
+      // The wrapper folder carries the same `mydata~<id>` name as the zip.
+      if (segments.some((segment) => SNAPCHAT_ARCHIVE_NAME.test(segment))) {
+        return true;
+      }
+      // A media folder only counts alongside the export's own scaffolding,
+      // since "memories/" on its own is far too generic to claim.
+      return (
+        segments.some((segment) => SNAPCHAT_MEDIA_DIRECTORIES.has(segment)) &&
+        segments.some((segment) => segment === "json" || segment === "html")
+      );
     });
   },
 
@@ -588,14 +894,18 @@ export const snapchatParser: DataParser = {
       );
     }
 
-    const chats = await parseChatHistory(entries, ownerName, batch, report);
-    await parseSnapHistory(entries, batch, report);
-    await parseFriends(entries, batch, report);
-    await parseCalls(entries, batch, report);
+    await parseChatHistory(entries, ownerName, batch, report);
+    await parseSnapHistory(entries, ownerName, batch, report);
+    await parseFriends(entries, ownerName, batch, report);
+    await parseCalls(entries, ownerName, batch, report);
+    await parseMediaEntries(entries, batch, report);
 
-    if (batch.emitted === 0 && chats === 0) {
+    // A split export is mostly media parts with no history in them at all, so
+    // an empty part is normal rather than a failure. Only a part carrying
+    // nothing we can read in any category is worth refusing.
+    if (batch.emitted === 0) {
       throw new Error(
-        "No Snapchat chat, snap or friend history was found in this export",
+        "This Snapchat part contains no chats, snaps, friends or media we can read",
       );
     }
 

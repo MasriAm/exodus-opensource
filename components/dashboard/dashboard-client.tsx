@@ -20,6 +20,8 @@ import { DashboardSidebar } from "./sidebar";
 import { useArchiveSession, setSessionFlash } from "@/components/archive-session";
 import { PressButton } from "@/components/capsule/press-button";
 import { StatePanel } from "@/components/state-panel";
+import { usePlatformTheme } from "@/components/use-platform-theme";
+import { resolvePlatformTheme } from "@/lib/platform-theme";
 import type { ArchiveFilter } from "@/lib/db/archive-filter";
 import { yearBoundsMs } from "@/lib/db/archive-filter";
 import type {
@@ -250,6 +252,15 @@ export function DashboardClient({ api }: DashboardClientProps) {
   const [surpriseLoading, setSurpriseLoading] = useState(false);
   const [surpriseEmpty, setSurpriseEmpty] = useState(false);
   const [searchSeed, setSearchSeed] = useState("");
+
+  // The desk wears the same skin the capsule did, so finishing Wrapped and
+  // landing here reads as one product rather than two. Empty platforms while
+  // the filters load resolve to the paper archive, so there is no colour flash.
+  const deskTheme = useMemo(
+    () => resolvePlatformTheme(options?.platforms ?? []),
+    [options],
+  );
+  usePlatformTheme(deskTheme);
 
   const [people, setPeople] = useState<PeopleListItem[]>([]);
   const [peopleLoading, setPeopleLoading] = useState(false);

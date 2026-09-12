@@ -134,6 +134,17 @@ const media: NormalizedRow[] = [
     taken_at_ms: null,
     conversation: GROUP,
   },
+  {
+    // media.conversation is nullable by schema — a chat attachment or a loose
+    // photo belongs to no thread. Wrapped used to demand a string here and
+    // threw on the first such row, taking the whole capsule down.
+    table: "media",
+    platform: "snapchat",
+    zip_path: "mydata~1/chat_media/2023-04-12_loose.jpg",
+    kind: "image",
+    taken_at_ms: localMs(2023, 3, 12, 10, 0),
+    conversation: null,
+  },
 ];
 
 const events: NormalizedRow[] = [
@@ -401,6 +412,27 @@ describe("every named query runs against DuckDB", () => {
       expect(result).toBeDefined();
     }, 30_000);
   }
+});
+
+describe("Wrapped survives the archive it is given", () => {
+  it("maps a media row with no conversation instead of dropping the panel", async () => {
+    const wrapped = await executeNamedQuery(db, "wrappedStats", undefined);
+
+    // The panel guard would hide a mapper throw by returning [], so assert the
+    // rows actually came through — that is what makes this a real regression.
+    expect(wrapped.oldestImages.length).toBeGreaterThan(0);
+    const loose = wrapped.oldestImages.find((image) =>
+      image.zipPath.endsWith("2023-04-12_loose.jpg"),
+    );
+    expect(loose).toBeDefined();
+    expect(loose?.conversation).toBe("");
+  });
+
+  it("still reports the totals the deck opens on", async () => {
+    const wrapped = await executeNamedQuery(db, "wrappedStats", undefined);
+    expect(wrapped.totalMessages).toBeGreaterThan(0);
+    expect(wrapped.totalMedia).toBeGreaterThan(0);
+  });
 });
 
 describe("named query results", () => {

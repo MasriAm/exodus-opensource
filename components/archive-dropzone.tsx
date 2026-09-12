@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 type ArchiveDropzoneProps = {
   busy: boolean;
   error?: string | null;
-  onFile: (file: File) => void;
+  onFiles: (files: File[]) => void;
   onDemo: () => void;
 };
 
@@ -25,7 +25,7 @@ function isZipFile(file: File): boolean {
 export function ArchiveDropzone({
   busy,
   error,
-  onFile,
+  onFiles,
   onDemo,
 }: ArchiveDropzoneProps) {
   const inputId = useId();
@@ -37,16 +37,30 @@ export function ArchiveDropzone({
     "instagram" | "snapchat" | "whatsapp" | "facebook"
   >("instagram");
 
-  const submitFile = (file: File | undefined) => {
-    if (!file) {
+  const submitFiles = (list: FileList | null) => {
+    const chosen = Array.from(list ?? []);
+    if (chosen.length === 0) {
       return;
     }
-    if (!isZipFile(file)) {
-      setValidationError("Choose a .zip export from Instagram or WhatsApp.");
+
+    const zips = chosen.filter(isZipFile);
+    const rejected = chosen.length - zips.length;
+
+    if (zips.length === 0) {
+      setValidationError(
+        "Choose the .zip files your export downloaded as — not the unzipped folder.",
+      );
       return;
     }
-    setValidationError(null);
-    onFile(file);
+
+    // A split export is normally dropped in one go, so name what was skipped
+    // rather than silently importing a subset.
+    setValidationError(
+      rejected > 0
+        ? `Skipped ${rejected} file${rejected === 1 ? "" : "s"} that ${rejected === 1 ? "is" : "are"} not a .zip.`
+        : null,
+    );
+    onFiles(zips);
   };
 
   return (
@@ -71,7 +85,7 @@ export function ArchiveDropzone({
         onDrop={(event) => {
           event.preventDefault();
           setDragActive(false);
-          submitFile(event.dataTransfer.files.item(0) ?? undefined);
+          submitFiles(event.dataTransfer.files);
         }}
       >
         <button
@@ -86,18 +100,19 @@ export function ArchiveDropzone({
             strokeWidth={1.5}
           />
           <p className="mt-2 max-w-md font-body text-[14px] font-medium leading-6 text-ink/85 sm:mt-3 sm:text-[15px]">
-            Click or drag &amp; drop to upload your export
+            Click or drag &amp; drop your export — add every .zip at once if it arrived split
           </p>
         </button>
         <input
           ref={inputRef}
           id={inputId}
           type="file"
+          multiple
           accept=".zip,application/zip,application/x-zip-compressed"
           className="sr-only"
           disabled={busy}
           onChange={(event) => {
-            submitFile(event.target.files?.item(0) ?? undefined);
+            submitFiles(event.target.files);
             event.target.value = "";
           }}
         />
@@ -168,19 +183,19 @@ export function ArchiveDropzone({
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 1</span>
                     <p className="mt-1">
-                      Instagram app → Settings → Accounts Center → Your information and permissions → Download your information
+                      Instagram → Settings → Accounts Center → Your information and permissions → <Mark>Export your information</Mark> → Create export
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 2</span>
                     <p className="mt-1">
-                      Request a download. Choose <Mark>JSON</Mark>, not HTML. Range: All time.
+                      Download to device. Choose <Mark>JSON</Mark>, not HTML, and set the range to All time. Ticking only Messages is fine and much faster.
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 3</span>
                     <p className="mt-1">
-                      Check email for Instagram&apos;s download link, then drop the .zip here.
+                      Instagram emails a link within a few hours. It expires after 4 days. Drop the .zip here — add every part if it arrives split.
                     </p>
                   </li>
                 </>
@@ -190,19 +205,19 @@ export function ArchiveDropzone({
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 1</span>
                     <p className="mt-1">
-                      Snapchat app → Profile → the gear icon → <Mark>My Data</Mark>
+                      Snapchat → Profile → the gear icon → <Mark>My Data</Mark>, or sign in at accounts.snapchat.com
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 2</span>
                     <p className="mt-1">
-                      Submit a request for all date ranges. Leave Memories out unless you want a much larger file.
+                      Pick your categories and turn the date range off to get everything. Leave <Mark>Export your Memories</Mark> off unless you want a much larger file.
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 3</span>
                     <p className="mt-1">
-                      Snapchat emails a download link, usually the same day. Only chats someone saved are included.
+                      Snapchat emails a link, usually within a day. Only chats someone saved in the conversation are included — everything else was deleted on open.
                     </p>
                   </li>
                 </>
@@ -212,19 +227,19 @@ export function ArchiveDropzone({
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 1</span>
                     <p className="mt-1">
-                      Open WhatsApp → Settings → Chats → Export Chat
+                      Open a chat → tap the contact name → <Mark>Export chat</Mark>
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 2</span>
                     <p className="mt-1">
-                      Select a chat, choose <Mark>Attach Media</Mark>, and save the generated .zip file.
+                      Choose Without media unless you specifically want the photos, then save the .zip.
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 3</span>
                     <p className="mt-1">
-                      Repeat for other chats if desired, and drop the .zip(s) here.
+                      WhatsApp exports one conversation at a time, so repeat for each chat and drop them all here together.
                     </p>
                   </li>
                 </>
@@ -234,19 +249,19 @@ export function ArchiveDropzone({
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 1</span>
                     <p className="mt-1">
-                      Facebook app → Settings &amp; Privacy → Settings → Download your information
+                      Facebook → Settings &amp; privacy → Settings → Meta Account → Your information and permissions → <Mark>Export your information</Mark> → Create export
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 2</span>
                     <p className="mt-1">
-                      Request a download. Choose <Mark>JSON</Mark>, not HTML. Range: All time.
+                      Download to device. Choose <Mark>JSON</Mark>, not HTML, range All time. Messenger history lives here, not in the Instagram export.
                     </p>
                   </li>
                   <li>
                     <span className="font-display text-xs font-bold text-teal">STEP 3</span>
                     <p className="mt-1">
-                      Check email for Facebook&apos;s download link, then drop the .zip here.
+                      The link stays available for 4 days. Drop the .zip here — add every part if it arrives split.
                     </p>
                   </li>
                 </>

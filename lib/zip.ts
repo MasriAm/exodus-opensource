@@ -82,17 +82,39 @@ export class ZipEntryMap {
     try {
       const zipEntries = await reader.getEntries({ strictness: "balanced" });
       const entries = new Map<string, FileEntry>();
+      let skippedUnsafe = 0;
+      let skippedDuplicate = 0;
 
       for (const entry of zipEntries) {
         if (entry.directory) {
           continue;
         }
 
-        const path = normalizePath(entry.filename);
+        // A single odd filename must not cost the whole archive. Media exports
+        // run to tens of thousands of entries, and one unsafe or repeated name
+        // among them used to throw away every other file in the part. Skipping
+        // keeps the guarantee that matters — an unsafe path is never exposed,
+        // and the first entry of a duplicate pair always wins — without
+        // failing an otherwise readable import.
+        let path: string;
+        try {
+          path = normalizePath(entry.filename);
+        } catch {
+          skippedUnsafe += 1;
+          continue;
+        }
+
         if (entries.has(path)) {
-          throw new Error(`ZIP contains a duplicate entry path: ${path}`);
+          skippedDuplicate += 1;
+          continue;
         }
         entries.set(path, entry);
+      }
+
+      if (skippedUnsafe > 0 || skippedDuplicate > 0) {
+        console.warn(
+          `Skipped ${skippedUnsafe} unsafe and ${skippedDuplicate} duplicate ZIP entries while opening the archive.`,
+        );
       }
 
       const entryPaths = Array.from(entries.keys()).sort((left, right) =>

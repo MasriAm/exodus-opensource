@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 
 import { ArchiveDropzone } from "@/components/archive-dropzone";
@@ -21,7 +20,7 @@ type HomeShellProps = {
   queuedExports?: { file: File; platform: string }[];
   onConfirmImport?: () => void;
   onRemoveExport?: (index: number) => void;
-  onFile: (file: File) => void;
+  onFiles: (files: File[]) => void;
   onDemo: () => void;
 };
 
@@ -34,7 +33,7 @@ export function HomeShell({
   queuedExports,
   onConfirmImport,
   onRemoveExport,
-  onFile,
+  onFiles,
   onDemo,
 }: HomeShellProps) {
   const reduceMotion = useReducedMotion();
@@ -78,33 +77,19 @@ export function HomeShell({
           className="mt-2 max-w-lg font-body text-[14px] font-medium leading-6 text-ink/85 sm:mt-3 sm:text-[15px] sm:leading-6"
           {...item(0.1)}
         >
-          Drop your Instagram, WhatsApp, or Facebook <Mark>.zip</Mark> export. We parse it in your
-          browser — nothing leaves this device.
+          Drop your Snapchat, Instagram, WhatsApp or Facebook <Mark>.zip</Mark> export. We parse it
+          in your browser — nothing leaves this device.
         </motion.p>
 
         <motion.div className="mt-4 w-full sm:mt-5" {...item(0.15)}>
           <ArchiveDropzone
             busy={busy || !workerReady}
             error={error}
-            onFile={onFile}
+            onFiles={onFiles}
             onDemo={onDemo}
           />
         </motion.div>
 
-        {!busy ? (
-          <motion.p
-            className="mt-4 font-display text-xs tracking-[0.02em] text-ink/70"
-            {...item(0.2)}
-          >
-            Want the dramatic version?{" "}
-            <Link
-              href="/receipts"
-              className="text-teal underline underline-offset-4"
-            >
-              Receipts reads your Snapchat and Instagram chats back to you
-            </Link>
-          </motion.p>
-        ) : null}
 
         {queuedExports && queuedExports.length > 0 && (
           <motion.div
@@ -116,6 +101,19 @@ export function HomeShell({
               <h3 className="font-display text-sm font-bold text-ink/70 uppercase tracking-wider mb-2">
                 Staging Area ({queuedExports.length})
               </h3>
+
+              {queuedExports.some(
+                (exportItem) => exportItem.platform.toLowerCase() === "snapchat",
+              ) ? (
+                <p className="mb-2 border-s-4 border-coral bg-coral/10 px-3 py-2 font-body text-[13px] leading-5 text-ink">
+                  <span className="font-display font-bold">Heads up — </span>
+                  Snapchat only exports chats someone <Mark>saved</Mark> in the
+                  conversation. Everything else was deleted when it was opened, so
+                  it cannot be in this file. If your export came as several .zip
+                  parts, add all of them: the chats live in one part and your
+                  memories in the rest.
+                </p>
+              ) : null}
               {queuedExports.map((exportItem, index) => (
                 <div
                   key={`${exportItem.platform}-${index}`}

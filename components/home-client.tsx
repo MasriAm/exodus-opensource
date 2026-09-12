@@ -173,29 +173,72 @@ export function HomeClient() {
     [api, markIngesting, markLive, markReady, router],
   );
 
-  const handleFileDropped = useCallback(
-    async (file: File) => {
+  const handleFilesDropped = useCallback(
+    async (files: File[]) => {
       if (!api) {
         setError("The private worker is still starting. Try again in a moment.");
         return;
       }
+      if (files.length === 0) {
+        return;
+      }
+
       setDetecting(true);
       setError(null);
-      try {
-        const platform = await api.detectArchive(file);
-        if (platform) {
-          setQueuedExports((current) => [...current, { file, platform }]);
-        } else {
-          setError(
-            "The archive could not be recognized. Check the export format and try again.",
-          );
+
+      const accepted: { file: File; platform: string }[] = [];
+      const failures: { name: string; reason: string }[] = [];
+
+      // Identified one at a time on purpose: a split export is nine separate
+      // archives, and one unreadable part should not discard the other eight.
+      for (const file of files) {
+        try {
+          const platform = await api.detectArchive(file);
+          if (platform) {
+            accepted.push({ file, platform });
+          } else {
+            failures.push({
+              name: file.name,
+              reason: "not a export we recognize",
+            });
+          }
+        } catch (err: unknown) {
+          console.error(`Could not read ${file.name}`, err);
+          failures.push({
+            name: file.name,
+            // The worker knows why — a truncated download reads very
+            // differently from an unknown format, and saying which saves
+            // somebody re-requesting an export that was fine.
+            reason: friendlyError(err, "could not be opened"),
+          });
         }
-      } catch (err: unknown) {
-        console.error("Format detection failed", err);
-        setError("An error occurred while detecting the archive format.");
-      } finally {
-        setDetecting(false);
       }
+
+      if (accepted.length > 0) {
+        setQueuedExports((current) => {
+          // Re-dropping the same part should not queue it twice.
+          const seen = new Set(
+            current.map((entry) => `${entry.file.name}:${entry.file.size}`),
+          );
+          const fresh = accepted.filter(
+            (entry) => !seen.has(`${entry.file.name}:${entry.file.size}`),
+          );
+          return [...current, ...fresh];
+        });
+      }
+
+      if (failures.length > 0) {
+        const detail = failures
+          .map((failure) => `${failure.name} — ${failure.reason}`)
+          .join("; ");
+        setError(
+          accepted.length > 0
+            ? `Added ${accepted.length} of ${files.length}. ${detail}`
+            : detail,
+        );
+      }
+
+      setDetecting(false);
     },
     [api],
   );
@@ -260,7 +303,7 @@ export function HomeClient() {
       queuedExports={queuedExports}
       onConfirmImport={confirmImport}
       onRemoveExport={removeExport}
-      onFile={handleFileDropped}
+      onFiles={handleFilesDropped}
       onDemo={() => void importDemo()}
     />
   );

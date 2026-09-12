@@ -394,3 +394,289 @@
     transition: none !important;
   }
 }
+
+/* ------------------------------------------------------------- platform -- */
+
+@import "@fontsource-variable/nunito";
+@import "@fontsource-variable/inter";
+
+/*
+ * Per-platform capsule skins.
+ *
+ * These are not recolours. The deck and desk draw every surface, border,
+ * shadow, corner and typeface from the tokens below, so a skin can change the
+ * whole shape language: the archive is letterpress (hard offset shadows, heavy
+ * rules, typewriter), Snapchat is soft and chunky, the Meta trio are flat
+ * product chrome. Only tokens are redefined — nothing here restyles an element
+ * directly, which is what keeps every skin structurally sound.
+ *
+ * Set by `data-wrapped-theme` on the document element.
+ */
+
+/* The paper archive owns these defaults; a skin overrides what it changes. */
+:root {
+  --shadow-lift: 8px 8px 0 var(--ink);
+  --shadow-press-active: 2px 2px 0 var(--ink);
+}
+
+/*
+ * Snapchat — black with yellow, the way the app actually looks.
+ *
+ * The brand yellow is an accent colour, not a canvas: a full-bleed #FFFC00
+ * ground is exhausting to read and washes out the very thing that makes it
+ * recognizable. On black it does the job it does in the app — it marks the
+ * thing you are meant to look at.
+ */
+[data-wrapped-theme="snapchat"] {
+  --paper: #0c0c10;
+  --cream: #17171d;
+  --receipt: #1f1f27;
+  --ink: #ffffff;
+  --body: #b6b6c2;
+  --rail: #050507;
+  --teal: #fffc00;
+  --taupe: #6c6c7a;
+  --slate: #9a9aa8;
+  --coral: #ff4d6d;
+
+  --font-display: "Nunito Variable", "Nunito", ui-rounded, "Segoe UI", sans-serif;
+  --font-body: "Nunito Variable", "Nunito", ui-rounded, "Segoe UI", sans-serif;
+
+  /* Chunky and rounded, lifted by a flat yellow edge rather than a drop. */
+  --radius: 20px;
+  --border-strong: 2px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  --shadow-panel: 0 3px 0 color-mix(in srgb, var(--teal) 70%, transparent);
+  --shadow-press: 0 5px 0 color-mix(in srgb, var(--teal) 85%, transparent);
+  --shadow-lift: 0 9px 0 var(--teal);
+  --shadow-press-active: 0 2px 0 var(--teal);
+  --shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.6);
+
+  --teal-wash: color-mix(in srgb, var(--teal) 16%, transparent);
+  --heat-0: #14141a;
+  --heat-1: #4a4718;
+  --heat-2: #8a8410;
+  --heat-3: #ccc500;
+  --heat-4: #fffc00;
+}
+
+/* Instagram — the gradient, on the plum of the app at night. Glass, not paper. */
+[data-wrapped-theme="instagram"] {
+  --paper: #140a1c;
+  --cream: #221331;
+  --receipt: #2b1a3d;
+  --ink: #fbf5ff;
+  --body: #cdb8e0;
+  --rail: #0c0612;
+  --teal: #e1306c;
+  --taupe: #8a6aa6;
+  --slate: #b39ccb;
+  --coral: #f77737;
+
+  --font-display: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* Hairline borders and a coloured glow instead of a hard drop. */
+  --radius: 16px;
+  --border-strong: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  --shadow-panel: 0 10px 30px -12px rgba(0, 0, 0, 0.85);
+  --shadow-press: 0 16px 40px -16px rgba(225, 48, 108, 0.55);
+  --shadow-lift: 0 22px 50px -18px rgba(225, 48, 108, 0.75);
+  --shadow-press-active: 0 8px 20px -10px rgba(225, 48, 108, 0.5);
+  --shadow-soft: 0 12px 34px rgba(0, 0, 0, 0.55);
+
+  --teal-wash: color-mix(in srgb, var(--teal) 20%, transparent);
+  --heat-0: #1c0f28;
+  --heat-1: #4a2350;
+  --heat-2: #833ab4;
+  --heat-3: #c13584;
+  --heat-4: #f77737;
+}
+
+/* Facebook — flat product chrome: cool ground, one blue, soft square cards. */
+[data-wrapped-theme="facebook"] {
+  --paper: #eef1f6;
+  --cream: #ffffff;
+  --receipt: #f7f9fc;
+  --ink: #12161c;
+  --body: #4a5568;
+  --rail: #0f1a2b;
+  --teal: #1877f2;
+  --taupe: #8a97ab;
+  --slate: #5a6b82;
+  --coral: #e41e3f;
+
+  --font-display: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --radius: 10px;
+  --border-strong: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  --shadow-panel: 0 1px 2px rgba(16, 24, 40, 0.1);
+  --shadow-press: 0 2px 8px rgba(16, 24, 40, 0.12);
+  --shadow-lift: 0 10px 24px rgba(16, 24, 40, 0.16);
+  --shadow-press-active: 0 1px 3px rgba(16, 24, 40, 0.14);
+  --shadow-soft: 0 8px 24px rgba(16, 24, 40, 0.12);
+
+  --teal-wash: color-mix(in srgb, var(--teal) 10%, transparent);
+  --heat-0: #eef1f6;
+  --heat-1: #cfe0fb;
+  --heat-2: #8fb8f6;
+  --heat-3: #4a8cf0;
+  --heat-4: #0b4fa8;
+}
+
+/* WhatsApp — the chat wallpaper, bubble corners, green kept for accents. */
+[data-wrapped-theme="whatsapp"] {
+  --paper: #ece5dd;
+  --cream: #ffffff;
+  --receipt: #f3f8f4;
+  --ink: #101b20;
+  --body: #45565f;
+  --rail: #075e54;
+  --teal: #128c7e;
+  --taupe: #a8b3ad;
+  --slate: #54656f;
+  --coral: #e5533d;
+
+  --font-display: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --radius: 14px;
+  --border-strong: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  --shadow-panel: 0 1px 1px rgba(11, 20, 26, 0.14);
+  --shadow-press: 0 2px 6px rgba(11, 20, 26, 0.16);
+  --shadow-lift: 0 10px 22px rgba(11, 20, 26, 0.2);
+  --shadow-press-active: 0 1px 2px rgba(11, 20, 26, 0.18);
+  --shadow-soft: 0 8px 22px rgba(11, 20, 26, 0.16);
+
+  --teal-wash: color-mix(in srgb, var(--teal) 12%, transparent);
+  --heat-0: #ece5dd;
+  --heat-1: #cfe9d6;
+  --heat-2: #93d3a8;
+  --heat-3: #40a97a;
+  --heat-4: #075e54;
+}
+
+/*
+ * Ground texture. The archive's film grain is tuned for paper: on the dark
+ * skin it reads as TV static, and on the flat product skins it reads as dirt.
+ */
+[data-wrapped-theme="instagram"] .film-grain-overlay,
+[data-wrapped-theme="instagram"] .sidebar-grain {
+  opacity: 0.03;
+}
+
+[data-wrapped-theme="snapchat"] .film-grain-overlay,
+[data-wrapped-theme="snapchat"] .sidebar-grain {
+  opacity: 0.025;
+}
+
+[data-wrapped-theme="facebook"] .film-grain-overlay,
+[data-wrapped-theme="whatsapp"] .film-grain-overlay,
+[data-wrapped-theme="facebook"] .sidebar-grain,
+[data-wrapped-theme="whatsapp"] .sidebar-grain {
+  opacity: 0;
+}
+
+/* Instagram lights its ground from the corners, the way the gradient runs. */
+[data-wrapped-theme="instagram"] body {
+  background-image:
+    radial-gradient(
+      70% 55% at 12% 0%,
+      color-mix(in srgb, #833ab4 32%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      60% 50% at 100% 100%,
+      color-mix(in srgb, #f77737 20%, transparent),
+      transparent 72%
+    );
+  background-attachment: fixed;
+}
+
+[data-wrapped-theme="snapchat"] body {
+  background-image: radial-gradient(
+    80% 55% at 50% -10%,
+    color-mix(in srgb, #fffc00 12%, transparent),
+    transparent 68%
+  );
+  background-attachment: fixed;
+}
+
+/* WhatsApp's wallpaper, at the weight the real app uses it. */
+[data-wrapped-theme="whatsapp"] body {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23000' stroke-opacity='0.045' stroke-width='1.4'%3E%3Cpath d='M14 10c3 0 4 2 4 4s-1 4-4 4-4-2-4-4 1-4 4-4z'/%3E%3Cpath d='M40 34c3 0 4 2 4 4s-1 4-4 4-4-2-4-4 1-4 4-4z'/%3E%3Cpath d='M30 4l4 6-8 0z'/%3E%3Cpath d='M6 40l5 5-5 5-5-5z'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Type discipline. The archive letterpresses its labels; the app skins do not. */
+[data-wrapped-theme="snapchat"] .meta-caps,
+[data-wrapped-theme="instagram"] .meta-caps,
+[data-wrapped-theme="facebook"] .meta-caps,
+[data-wrapped-theme="whatsapp"] .meta-caps {
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+
+[data-wrapped-theme="snapchat"] h1,
+[data-wrapped-theme="snapchat"] h2,
+[data-wrapped-theme="snapchat"] h3,
+[data-wrapped-theme="snapchat"] .font-display {
+  letter-spacing: -0.02em;
+  font-weight: 800;
+}
+
+[data-wrapped-theme="instagram"] h1,
+[data-wrapped-theme="instagram"] h2,
+[data-wrapped-theme="instagram"] h3,
+[data-wrapped-theme="facebook"] h1,
+[data-wrapped-theme="facebook"] h2,
+[data-wrapped-theme="facebook"] h3,
+[data-wrapped-theme="whatsapp"] h1,
+[data-wrapped-theme="whatsapp"] h2,
+[data-wrapped-theme="whatsapp"] h3,
+[data-wrapped-theme="instagram"] .font-display,
+[data-wrapped-theme="facebook"] .font-display,
+[data-wrapped-theme="whatsapp"] .font-display {
+  letter-spacing: -0.025em;
+  font-weight: 700;
+}
+
+/* The `>>` marker is an archive-terminal motif; the app skins drop it. */
+[data-wrapped-theme="snapchat"] .slide-title-marker,
+[data-wrapped-theme="instagram"] .slide-title-marker,
+[data-wrapped-theme="facebook"] .slide-title-marker,
+[data-wrapped-theme="whatsapp"] .slide-title-marker {
+  display: none;
+}
+
+/*
+ * Typeface, reached past the utilities.
+ *
+ * `@theme inline` bakes the literal font stack into `.font-display` and
+ * friends, so redefining the variable alone cannot retype a skin. The theme
+ * attribute lives on <html>, so qualifying with the element out-specifies the
+ * utility class without needing !important. The archive carries no attribute
+ * and keeps its typewriter and serif untouched.
+ */
+html[data-wrapped-theme] .font-display,
+html[data-wrapped-theme] .font-mono,
+html[data-wrapped-theme] h1,
+html[data-wrapped-theme] h2,
+html[data-wrapped-theme] h3,
+html[data-wrapped-theme] h4,
+html[data-wrapped-theme] button {
+  font-family: var(--font-display);
+}
+
+html[data-wrapped-theme] body,
+html[data-wrapped-theme] .font-body,
+html[data-wrapped-theme] .font-sans {
+  font-family: var(--font-body);
+}
+
+/* Mono is a deliberate archive motif, so the app skins do not letterspace it. */
+html[data-wrapped-theme] h1,
+html[data-wrapped-theme] h2,
+html[data-wrapped-theme] h3,
+html[data-wrapped-theme] h4 {
+  letter-spacing: -0.022em;
+}

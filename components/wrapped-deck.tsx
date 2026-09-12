@@ -52,6 +52,12 @@ import {
   replaceSessionUrl,
   wrappedSlideHref,
 } from "@/components/dashboard/session-history";
+import { maskToBlocks } from "@/lib/drama/redact";
+import type { DramaReport } from "@/lib/drama/types";
+import {
+  platformThemeMeta,
+  type PlatformThemeId,
+} from "@/lib/platform-theme";
 import { cn } from "@/lib/utils";
 
 export type WrappedDeckData = {
@@ -102,8 +108,14 @@ export type WrappedDeckData = {
 
 type WrappedDeckProps = {
   data: WrappedDeckData | null;
+  /** Behavioural read of the archive. Absent on a partial or media-only import. */
+  drama?: DramaReport | null;
+  /** Resolved capsule skin, used for the cover label only. */
+  theme?: PlatformThemeId;
   loading: boolean;
   error: string | null;
+  /** Raw failure text, shown so a local-only error can still be reported. */
+  errorDetail?: string | null;
   readMediaBlob: (zipPath: string) => Promise<Blob>;
 };
 
@@ -260,8 +272,11 @@ function SlideShell({
 
 export function WrappedDeck({
   data,
+  drama = null,
+  theme = "archive",
   loading,
   error,
+  errorDetail = null,
   readMediaBlob,
 }: WrappedDeckProps) {
   const router = useRouter();
@@ -269,6 +284,20 @@ export function WrappedDeck({
     router.push("/dashboard");
   }, [router]);
   const [index, setIndex] = useState(() => readWrappedSlideFromLocation(10_000));
+  const [revealedQuotes, setRevealedQuotes] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
+  const revealQuote = useCallback((messageId: number) => {
+    setRevealedQuotes((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  }, []);
   const [cringeIndex, setCringeIndex] = useState(0);
   const [cringePromptIndex, setCringePromptIndex] = useState(0);
   const [cringeRevealed, setCringeRevealed] = useState(false);
@@ -315,7 +344,9 @@ export function WrappedDeck({
         render: () => (
           <SlideShell>
             <p className="font-display text-sm font-bold tracking-[0.08em] text-ink">
-              YOUR TIME CAPSULE
+              {theme === "archive"
+                ? "YOUR TIME CAPSULE"
+                : `YOUR ${platformThemeMeta(theme).label.toUpperCase()} TIME CAPSULE`}
             </p>
             <div className="mt-6 grid w-full max-w-xl grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-2.5">
               {[
@@ -918,6 +949,172 @@ export function WrappedDeck({
       });
     }
 
+    // --- Behavioural slides. Only appear when the archive carries enough
+    // --- readable conversation for the numbers under them to mean anything.
+    const verdict = drama?.verdicts[0] ?? null;
+    if (verdict && drama) {
+      const runnersUp = drama.verdicts.slice(1);
+      built.push({
+        id: "verdict",
+        render: () => (
+          <SlideShell
+            title={<SlideTitle accent="coral">The Verdict</SlideTitle>}
+            subline={verdict.line}
+          >
+            <CapsuleCard className="p-5 sm:p-6">
+              <p className="meta-caps text-ink/70">
+                From {formatNumber(drama.analyzedMessages)} messages
+              </p>
+              <p className="mt-3 font-display text-[clamp(1.6rem,5.5vw,2.75rem)] font-bold leading-[1.05] tracking-tight text-ink">
+                {verdict.title}
+              </p>
+              <p className="mt-4 border-t border-ink/20 pt-3 font-body text-base leading-7 text-body">
+                {verdict.evidence}
+              </p>
+            </CapsuleCard>
+
+            {runnersUp.length > 0 ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {runnersUp.map((runner) => (
+                  <TagBox key={runner.id}>{runner.title}</TagBox>
+                ))}
+              </div>
+            ) : null}
+          </SlideShell>
+        ),
+      });
+    }
+
+    const exhibits = drama?.exhibits.slice(0, 4) ?? [];
+    if (exhibits.length > 0) {
+      built.push({
+        id: "receipts",
+        render: () => (
+          <SlideShell
+            title={<SlideTitle accent="coral">The Receipts</SlideTitle>}
+            subline="Pulled out by what was said, not by who said it. Blocked out until you tap."
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              {exhibits.map((exhibit) => {
+                const item = exhibit.items[0];
+                if (!item) {
+                  return null;
+                }
+                const revealed = revealedQuotes.has(item.messageId);
+                return (
+                  <CapsuleCard
+                    key={exhibit.category.id}
+                    className="min-w-0 p-4 text-start"
+                  >
+                    <p className="meta-caps text-ink/80">
+                      <span aria-hidden="true">{exhibit.category.emoji} </span>
+                      {exhibit.category.label}
+                    </p>
+                    <button
+                      type="button"
+                      className="mt-3 w-full cursor-pointer text-start font-body text-[15px] leading-6 text-ink"
+                      onClick={() => revealQuote(item.messageId)}
+                      aria-pressed={revealed}
+                      aria-label={
+                        revealed ? "Hide this message" : "Reveal this message"
+                      }
+                    >
+                      {revealed ? (
+                        <UserText>{item.text}</UserText>
+                      ) : (
+                        <span className="opacity-75">
+                          {maskToBlocks(item.text)}
+                        </span>
+                      )}
+                    </button>
+                    <p className="meta-caps mt-3 border-t border-ink/20 pt-2 text-ink/60">
+                      {item.isSelf ? "you" : "them"} ·{" "}
+                      {formatDate(item.sentAtMs)} ·{" "}
+                      {formatNumber(exhibit.totalMatches)} like this
+                    </p>
+                  </CapsuleCard>
+                );
+              })}
+            </div>
+          </SlideShell>
+        ),
+      });
+    }
+
+    const situationship = drama?.situationship ?? null;
+    const slowFade = drama?.slowFade ?? null;
+    if (situationship || slowFade) {
+      built.push({
+        id: "arcs",
+        render: () => (
+          <SlideShell
+            title={<SlideTitle accent="slate">The Arc</SlideTitle>}
+            subline={
+              situationship && slowFade
+                ? "Two chats that had a beginning, a middle and an ending."
+                : "A chat that had a beginning, a middle and an ending."
+            }
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              {situationship ? (
+                <CapsuleCard className="min-w-0 p-4 text-start">
+                  <p className="meta-caps text-ink/70">Burned the fastest</p>
+                  <p className="mt-2 font-display text-xl font-bold leading-tight text-ink">
+                    <UserText>{situationship.conversation}</UserText>
+                  </p>
+                  <p className="mt-3 font-body text-[15px] leading-6 text-body">
+                    {formatNumber(situationship.messageCount)} messages in{" "}
+                    {formatNumber(situationship.spanDays)} days —{" "}
+                    {situationship.intensity} a day while it lasted.
+                  </p>
+                </CapsuleCard>
+              ) : null}
+
+              {slowFade ? (
+                <CapsuleCard className="min-w-0 p-4 text-start">
+                  <p className="meta-caps text-ink/70">Went quiet</p>
+                  <p className="mt-2 font-display text-xl font-bold leading-tight text-ink">
+                    <UserText>{slowFade.conversation}</UserText>
+                  </p>
+                  <p className="mt-3 font-body text-[15px] leading-6 text-body">
+                    Silent {formatNumber(slowFade.silentDays)} days.{" "}
+                    {slowFade.lastWordWasYours
+                      ? "You had the last word."
+                      : "They had the last word."}
+                  </p>
+                </CapsuleCard>
+              ) : null}
+            </div>
+
+            {drama && drama.lateNightShare > 0 ? (
+              <Receipt
+                className="mt-4"
+                title="Late shift"
+                rows={[
+                  {
+                    label: "Sent between 1am and 5am",
+                    value: `${Math.round(drama.lateNightShare * 100)}%`,
+                  },
+                  ...(drama.lateNightAccomplice
+                    ? [
+                        {
+                          label: "Mostly to",
+                          value: (
+                            <UserText>
+                              {drama.lateNightAccomplice.conversation}
+                            </UserText>
+                          ),
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            ) : null}
+          </SlideShell>
+        ),
+      });
+    }
+
     built.push({
       id: "finale",
       render: () => (
@@ -943,7 +1140,11 @@ export function WrappedDeck({
     cringePromptIndex,
     cringeRevealed,
     data,
+    drama,
     goDashboard,
+    revealQuote,
+    revealedQuotes,
+    theme,
     identitiesOpen,
     interactive,
     interestYear,
@@ -1042,9 +1243,21 @@ export function WrappedDeck({
           title="Your Wrapped could not be calculated"
           description={error}
           action={
-            <PressButton type="button" onClick={goDashboard}>
-              Skip to dashboard
-            </PressButton>
+            <div className="flex flex-col items-start gap-4">
+              <PressButton type="button" onClick={goDashboard}>
+                Skip to dashboard
+              </PressButton>
+              {errorDetail ? (
+                <details className="max-w-xl text-start">
+                  <summary className="cursor-pointer font-display text-xs text-ink/70">
+                    What went wrong
+                  </summary>
+                  <p className="mt-2 break-words font-mono text-xs leading-5 text-body">
+                    {errorDetail}
+                  </p>
+                </details>
+              ) : null}
+            </div>
           }
         />
       </main>
@@ -1079,7 +1292,7 @@ export function WrappedDeck({
   const current = slides[safeIndex];
 
   const navButtonClass =
-    "inline-flex min-h-12 min-w-[7.25rem] cursor-pointer items-center justify-center border-strong bg-cream px-4 font-mono text-base font-bold tracking-[0.04em] text-ink shadow-press transition-[transform,box-shadow,background-color,opacity] enabled:hover:bg-receipt enabled:active:translate-x-0.5 enabled:active:translate-y-0.5 enabled:active:shadow-[2px_2px_0_var(--ink)] disabled:cursor-not-allowed disabled:bg-paper disabled:opacity-40 disabled:shadow-none motion-reduce:transition-none sm:min-h-[3.25rem] sm:min-w-[8.5rem] sm:px-5 sm:text-lg";
+    "inline-flex min-h-12 min-w-[7.25rem] cursor-pointer items-center justify-center border-strong bg-cream px-4 font-display text-base font-bold tracking-[0.04em] text-ink shadow-press transition-[transform,box-shadow,background-color,opacity] enabled:hover:bg-receipt enabled:active:translate-x-0.5 enabled:active:translate-y-0.5 enabled:active:shadow-[var(--shadow-press-active)] disabled:cursor-not-allowed disabled:bg-paper disabled:opacity-40 disabled:shadow-none motion-reduce:transition-none sm:min-h-[3.25rem] sm:min-w-[8.5rem] sm:px-5 sm:text-lg";
 
   return (
     <main className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-paper">

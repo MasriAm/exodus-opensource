@@ -247,14 +247,21 @@ async function detectArchive(file: File): Promise<string | null> {
   let candidate: ZipEntryMap | null = null;
   try {
     candidate = await ZipEntryMap.open(file);
-    const parser = detectParser(candidate.paths());
+  } catch (error: unknown) {
+    // Opening failed, which is a different problem from "we don't know this
+    // format" — collapsing the two hides a damaged or still-downloading file
+    // behind an unrecognized-format message.
+    console.error(`ZIP could not be opened: ${file.name}`, error);
+    throw new PublicWorkerError(
+      `${file.name} could not be opened. It may still be downloading, or the download may be incomplete.`,
+    );
+  }
+
+  try {
+    const parser = detectParser(candidate.paths(), { fileName: file.name });
     return parser ? parser.displayName : null;
-  } catch {
-    return null;
   } finally {
-    if (candidate) {
-      await closeCandidate(candidate);
-    }
+    await closeCandidate(candidate);
   }
 }
 
@@ -317,7 +324,7 @@ async function ingestArchive(
     label: "Detecting the export format…",
   });
 
-  const parser = detectParser(candidate.paths());
+  const parser = detectParser(candidate.paths(), { fileName: file.name });
   if (!parser) {
     await closeCandidate(candidate);
     throw new PublicWorkerError(
@@ -605,13 +612,32 @@ async function ping(): Promise<true> {
   return true;
 }
 
+/**
+ * Reading a central directory scales with the archive, and a split export
+ * hands over 2 GiB parts holding tens of thousands of media entries. A flat
+ * 45s budget times those out on slower machines and reports it as an
+ * unreadable file, so the allowance grows with the file and caps at 5 minutes.
+ */
+function archiveOpenTimeout(file: File): number {
+  const gibibytes =
+    file instanceof Blob && Number.isFinite(file.size)
+      ? file.size / 1_073_741_824
+      : 0;
+  return Math.min(
+    5 * 60_000,
+    WORKER_OP_TIMEOUT_MS + Math.ceil(gibibytes) * 60_000,
+  );
+}
+
 function heavyQueryTimeout(name: QueryName): number {
-  if (
-    name === "wrappedStats" ||
-    name === "personDetail" ||
-    name === "footprint" ||
-    name === "dramaCorpus"
-  ) {
+  // wrappedStats is a batch of a dozen aggregates and dramaCorpus pulls tens
+  // of thousands of rows across the boundary. On an archive with years of
+  // history those legitimately outrun the heavy budget, and timing out costs
+  // the whole screen rather than one panel.
+  if (name === "wrappedStats" || name === "dramaCorpus") {
+    return 4 * 60_000;
+  }
+  if (name === "personDetail" || name === "footprint") {
     return WORKER_HEAVY_TIMEOUT_MS;
   }
   return WORKER_OP_TIMEOUT_MS;
@@ -626,7 +652,7 @@ const api: IngestApi = {
   detectArchive: (file) =>
     runExclusive(() => detectArchive(file), {
       label: "detectArchive",
-      timeoutMs: WORKER_OP_TIMEOUT_MS,
+      timeoutMs: archiveOpenTimeout(file),
     }),
   query: <Name extends QueryName>(name: Name, ...args: QueryArgs<Name>) =>
     runExclusive(() => runQuery(name, args[0] as QueryParamsByName[Name]), {

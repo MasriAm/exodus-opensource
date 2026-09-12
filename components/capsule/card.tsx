@@ -16,7 +16,7 @@ export function CapsuleCard({
       className={cn(
         "rounded-[var(--radius)] border-strong bg-cream shadow-press",
         interactive &&
-          "transition-[transform,box-shadow] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[8px_8px_0_var(--ink)] motion-reduce:transform-none motion-reduce:hover:shadow-press",
+          "transition-[transform,box-shadow] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)] motion-reduce:transform-none motion-reduce:hover:shadow-press",
         className,
       )}
       {...props}
